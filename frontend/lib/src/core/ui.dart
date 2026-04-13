@@ -9,6 +9,10 @@ const Color copper = Color(0xFF9B3D28);
 const Color brick = Color(0xFFB95C3D);
 const Color moss = Color(0xFF5D7A57);
 const Color sky = Color(0xFF4A7A8C);
+const Color emberDark = Color(0xFF16110F);
+const Color smokeDark = Color(0xFF221A16);
+const Color ashText = Color(0xFFF1E6D8);
+const Color sageGlow = Color(0xFF8CA89D);
 
 ThemeData buildRgovTheme() {
   return _buildTheme(Brightness.light);
@@ -20,28 +24,34 @@ ThemeData buildRgovDarkTheme() {
 
 ThemeData _buildTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final colorScheme = ColorScheme.fromSeed(
-    seedColor: dark ? const Color(0xFF121212) : copper,
-    brightness: brightness,
-    primary: dark ? const Color(0xFFF1E6D8) : copper,
-    secondary: dark ? sky : moss,
-    surface: dark ? const Color(0xFF101010) : Colors.white,
-  );
+  final colorScheme =
+      ColorScheme.fromSeed(seedColor: copper, brightness: brightness).copyWith(
+        primary: dark ? const Color(0xFFE5C8AA) : copper,
+        onPrimary: dark ? emberDark : Colors.white,
+        secondary: dark ? sageGlow : moss,
+        onSecondary: dark ? emberDark : Colors.white,
+        surface: dark ? smokeDark : Colors.white,
+        onSurface: dark ? ashText : lacquer,
+        outline: dark
+            ? Colors.white.withValues(alpha: 0.14)
+            : lacquer.withValues(alpha: 0.12),
+      );
 
   return ThemeData(
     useMaterial3: true,
     fontFamily: 'Georgia',
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: dark ? const Color(0xFF050505) : parchment,
+    canvasColor: dark ? smokeDark : Colors.white,
+    scaffoldBackgroundColor: dark ? emberDark : parchment,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
-      foregroundColor: dark ? const Color(0xFFF6F1E8) : lacquer,
+      foregroundColor: dark ? ashText : lacquer,
       centerTitle: false,
       elevation: 0,
     ),
     cardTheme: CardThemeData(
       color: dark
-          ? const Color(0xFF111111)
+          ? const Color(0xFF1C1512).withValues(alpha: 0.94)
           : Colors.white.withValues(alpha: 0.94),
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -53,7 +63,7 @@ ThemeData _buildTheme(Brightness brightness) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: dark ? const Color(0xFF1A1A1A) : Colors.white,
+      fillColor: dark ? const Color(0xFF261E1A) : Colors.white,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(18),
         borderSide: BorderSide(
@@ -69,10 +79,75 @@ ThemeData _buildTheme(Brightness brightness) {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(18)),
         borderSide: BorderSide(
-          color: dark ? const Color(0xFFF1E6D8) : copper,
+          color: dark ? const Color(0xFFE5C8AA) : copper,
           width: 1.5,
         ),
       ),
+      labelStyle: TextStyle(color: dark ? ashText : lacquer),
+      hintStyle: TextStyle(
+        color: dark
+            ? ashText.withValues(alpha: 0.56)
+            : lacquer.withValues(alpha: 0.48),
+      ),
+    ),
+    drawerTheme: DrawerThemeData(
+      backgroundColor: dark ? const Color(0xFF191310) : Colors.white,
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: dark ? const Color(0xFF1E1713) : Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: dark ? ashText : lacquer,
+      textColor: dark ? ashText : lacquer,
+    ),
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: dark
+          ? const Color(0xFF191310).withValues(alpha: 0.96)
+          : Colors.white.withValues(alpha: 0.9),
+      indicatorColor: dark ? const Color(0xFF2B221D) : parchmentStrong,
+      selectedIconTheme: IconThemeData(
+        color: dark ? const Color(0xFFE5C8AA) : copper,
+      ),
+      selectedLabelTextStyle: TextStyle(
+        color: dark ? const Color(0xFFE5C8AA) : copper,
+        fontWeight: FontWeight.w700,
+      ),
+      unselectedIconTheme: IconThemeData(
+        color: dark
+            ? ashText.withValues(alpha: 0.72)
+            : lacquer.withValues(alpha: 0.72),
+      ),
+      unselectedLabelTextStyle: TextStyle(
+        color: dark
+            ? ashText.withValues(alpha: 0.72)
+            : lacquer.withValues(alpha: 0.72),
+      ),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: dark ? const Color(0xFFE5C8AA) : copper,
+        foregroundColor: dark ? emberDark : Colors.white,
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: dark ? ashText : lacquer,
+        side: BorderSide(
+          color: dark
+              ? Colors.white.withValues(alpha: 0.16)
+              : lacquer.withValues(alpha: 0.14),
+        ),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: dark ? const Color(0xFFE5C8AA) : copper,
+      ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: dark ? const Color(0xFF2A1F19) : lacquer,
+      contentTextStyle: TextStyle(color: dark ? ashText : Colors.white),
     ),
     dividerColor: (dark ? Colors.white : lacquer).withValues(alpha: 0.08),
   );
@@ -82,19 +157,19 @@ bool isDarkTheme(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark;
 
 Color appTextColor(BuildContext context) =>
-    isDarkTheme(context) ? const Color(0xFFF6F1E8) : lacquer;
+    isDarkTheme(context) ? ashText : lacquer;
 
 Color appMutedTextColor(BuildContext context, [double alpha = 0.76]) =>
     appTextColor(context).withValues(alpha: alpha);
 
 Color appInsetColor(BuildContext context) =>
-    isDarkTheme(context) ? const Color(0xFF1A1A1A) : parchment;
+    isDarkTheme(context) ? const Color(0xFF241C18) : parchment;
 
 Color appSoftFillColor(BuildContext context) =>
-    isDarkTheme(context) ? const Color(0xFF181818) : parchmentStrong;
+    isDarkTheme(context) ? const Color(0xFF312620) : parchmentStrong;
 
 Color appRailColor(BuildContext context) => isDarkTheme(context)
-    ? const Color(0xFF111111).withValues(alpha: 0.96)
+    ? const Color(0xFF191310).withValues(alpha: 0.96)
     : Colors.white.withValues(alpha: 0.9);
 
 LinearGradient appBackgroundGradient(BuildContext context) =>
@@ -102,7 +177,7 @@ LinearGradient appBackgroundGradient(BuildContext context) =>
     ? const LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
-        colors: [Color(0xFF030303), Color(0xFF0B0B0B), Color(0xFF19110E)],
+        colors: [Color(0xFF15100E), Color(0xFF1E1714), Color(0xFF2B1D17)],
       )
     : const LinearGradient(
         begin: Alignment.topLeft,

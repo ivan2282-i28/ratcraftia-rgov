@@ -10,6 +10,11 @@ class MessageResponse(BaseModel):
     detail: str
 
 
+class AuthLoginRequest(BaseModel):
+    identifier: str = Field(min_length=1)
+    secret: str = Field(min_length=1)
+
+
 class PasswordLoginRequest(BaseModel):
     identifier: str = Field(min_length=1)
     password: str = Field(min_length=1)
@@ -20,6 +25,11 @@ class UanLoginRequest(BaseModel):
     uan: str = Field(min_length=1)
 
 
+class RgovLoginRequest(BaseModel):
+    login: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -28,6 +38,51 @@ class TokenResponse(BaseModel):
 
 class LoginChangeRequest(BaseModel):
     new_login: str = Field(min_length=3, max_length=64)
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=6)
+
+
+class ExternalAuthApplicationRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=500)
+    homepage_url: str = Field(default="", max_length=240)
+    contact_email: str = Field(default="", max_length=160)
+    redirect_uri: str = Field(min_length=8, max_length=500)
+
+
+class ExternalAuthApplicationRead(BaseModel):
+    id: int
+    name: str
+    description: str
+    homepage_url: str
+    contact_email: str
+    redirect_uri: str
+    client_id: str
+    is_approved: bool
+    approved_at: datetime | None = None
+    approved_by_name: str | None = None
+    is_active: bool
+    last_token_issued_at: datetime | None = None
+
+
+class ExternalAuthApplicationSecretResponse(BaseModel):
+    application: ExternalAuthApplicationRead
+    client_secret: str
+
+
+class ExternalAuthApplicationStatusResponse(BaseModel):
+    client_id: str
+    is_approved: bool
+    is_active: bool
+
+
+class OAuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
 
 
 class OrganizationCreate(BaseModel):
@@ -45,6 +100,7 @@ class OrganizationRead(BaseModel):
     slug: str
     kind: str
     description: str
+    ratubles: int
 
 
 class UserRead(BaseModel):
@@ -65,10 +121,23 @@ class UserRead(BaseModel):
     photo_url: str | None = None
     aliases: list[str] = Field(default_factory=list)
     next_login_change_at: datetime | None = None
+    is_deputy: bool = False
 
 
 class ProfileResponse(UserRead):
     pass
+
+
+class ExternalAuthProfileResponse(BaseModel):
+    id: int
+    uin: str
+    login: str
+    first_name: str
+    last_name: str
+    patronymic: str
+    full_name: str
+    organization: OrganizationRead | None = None
+    photo_url: str | None = None
 
 
 class DidTokenResponse(BaseModel):
@@ -144,6 +213,55 @@ class BillRead(BaseModel):
     created_at: datetime
     yes_votes: int
     no_votes: int
+    total_votes: int
+    quorum_required: int
+    quorum_reached: bool
+
+
+class DeputyRead(BaseModel):
+    user_id: int
+    full_name: str
+    seat_number: int
+    starts_at: datetime
+    ends_at: datetime
+
+
+class ParliamentCandidateCreate(BaseModel):
+    party_name: str = Field(default="", max_length=120)
+
+
+class ParliamentCandidateRead(BaseModel):
+    id: int
+    user_id: int
+    full_name: str
+    party_name: str
+    status: str
+    signatures: int
+    required_signatures: int
+    votes: int
+
+
+class ParliamentElectionRead(BaseModel):
+    id: int
+    title: str
+    kind: str
+    status: str
+    seat_count: int
+    opens_at: datetime
+    closes_at: datetime
+    created_at: datetime
+    total_ballots: int
+    candidate_count: int
+    registered_candidate_count: int
+    candidates: list[ParliamentCandidateRead] = Field(default_factory=list)
+
+
+class ParliamentSummaryRead(BaseModel):
+    seat_count: int
+    quorum: int
+    vacancies: int
+    deputies: list[DeputyRead] = Field(default_factory=list)
+    active_election: ParliamentElectionRead | None = None
 
 
 class ReferendumCreate(BaseModel):
@@ -152,7 +270,9 @@ class ReferendumCreate(BaseModel):
     proposed_text: str = Field(min_length=3)
     law_id: int | None = None
     target_level: str = Field(default="constitution")
-    closes_in_days: int = Field(default=7, ge=1, le=30)
+    matter_type: str = Field(default="constitution_amendment")
+    subject_identifier: str | None = None
+    closes_in_days: int = Field(default=4, ge=4, le=4)
 
 
 class ReferendumRead(BaseModel):
@@ -162,13 +282,27 @@ class ReferendumRead(BaseModel):
     proposed_text: str
     law_id: int | None
     target_level: str
+    matter_type: str
     status: str
     proposer_name: str
+    subject_user_id: int | None
+    subject_name: str | None
     opens_at: datetime
     closes_at: datetime
     created_at: datetime
+    signature_count: int
+    required_signatures: int
     yes_votes: int
     no_votes: int
+    total_votes: int
+    required_quorum: int
+    quorum_reached: bool
+
+
+class ReferendumOutcomeRead(BaseModel):
+    referendum: ReferendumRead
+    law: LawRead | None = None
+    detail: str
 
 
 class PermissionChangeRequest(BaseModel):
@@ -209,14 +343,24 @@ class UserDirectoryRead(BaseModel):
     full_name: str
 
 
+class RatublesDirectoryEntryRead(BaseModel):
+    id: int
+    kind: str
+    code: str
+    full_name: str
+    subtitle: str = ""
+
+
 class RatublesTransferRequest(BaseModel):
     recipient_id: int = Field(gt=0)
+    recipient_kind: str = Field(default="user", pattern="^(user|organization)$")
     amount: int = Field(gt=0)
     reason: str = Field(min_length=1, max_length=240)
 
 
 class RatublesMintRequest(BaseModel):
     recipient_id: int = Field(gt=0)
+    recipient_kind: str = Field(default="user", pattern="^(user|organization)$")
     amount: int = Field(gt=0)
     reason: str = Field(min_length=1, max_length=240)
 
@@ -227,9 +371,13 @@ class RatublesTransactionRead(BaseModel):
     direction: str
     amount: int
     reason: str
+    sender_kind: str | None = None
     sender_name: str | None
+    sender_code: str | None = None
     sender_uin: str | None
+    recipient_kind: str
     recipient_name: str | None
+    recipient_code: str | None = None
     recipient_uin: str | None
     actor_name: str | None
     created_at: datetime

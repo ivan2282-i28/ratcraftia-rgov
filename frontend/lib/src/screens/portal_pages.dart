@@ -19,6 +19,10 @@ class OverviewPage extends StatelessWidget {
     required this.referenda,
     required this.loginChangeController,
     required this.onChangeLogin,
+    required this.currentPasswordController,
+    required this.newPasswordController,
+    required this.confirmPasswordController,
+    required this.onChangePassword,
     required this.pushStatus,
     required this.onEnablePush,
     required this.onDisablePush,
@@ -36,6 +40,10 @@ class OverviewPage extends StatelessWidget {
   final List<JsonMap> referenda;
   final TextEditingController loginChangeController;
   final VoidCallback onChangeLogin;
+  final TextEditingController currentPasswordController;
+  final TextEditingController newPasswordController;
+  final TextEditingController confirmPasswordController;
+  final VoidCallback onChangePassword;
   final PushNotificationStatus pushStatus;
   final VoidCallback onEnablePush;
   final VoidCallback onDisablePush;
@@ -84,6 +92,44 @@ class OverviewPage extends StatelessWidget {
                   FilledButton.tonal(
                     onPressed: busy ? null : onChangeLogin,
                     child: const Text('Обновить логин'),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Смена пароля',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: appTextColor(context),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: currentPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Текущий пароль',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Новый пароль',
+                      hintText: 'Минимум 6 символов',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Повторите новый пароль',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.tonal(
+                    onPressed: busy ? null : onChangePassword,
+                    child: const Text('Обновить пароль'),
                   ),
                 ],
               ),
@@ -164,8 +210,9 @@ class RatublesPage extends StatelessWidget {
     required this.profile,
     required this.users,
     required this.directory,
+    required this.organizations,
     required this.transactions,
-    required this.selectedRecipientId,
+    required this.selectedRecipientKey,
     required this.transferAmountController,
     required this.transferReasonController,
     required this.onSelectedRecipientChanged,
@@ -177,17 +224,18 @@ class RatublesPage extends StatelessWidget {
   final JsonMap? profile;
   final List<JsonMap> users;
   final List<JsonMap> directory;
+  final List<JsonMap> organizations;
   final List<JsonMap> transactions;
-  final int? selectedRecipientId;
+  final String? selectedRecipientKey;
   final TextEditingController transferAmountController;
   final TextEditingController transferReasonController;
-  final ValueChanged<int?> onSelectedRecipientChanged;
+  final ValueChanged<String?> onSelectedRecipientChanged;
   final VoidCallback onSendTransfer;
 
   @override
   Widget build(BuildContext context) {
     final recipients = directory
-        .where((item) => item['id'] != profile?['id'])
+        .where((item) => item['kind'] != 'user' || item['id'] != profile?['id'])
         .toList();
     final leaderboard = [...users]
       ..sort(
@@ -197,6 +245,10 @@ class RatublesPage extends StatelessWidget {
       );
     final currentBalance = ((profile?['ratubles'] as num?)?.toInt()) ?? 0;
     final totalBalance = leaderboard.fold<int>(
+      0,
+      (sum, item) => sum + (((item['ratubles'] as num?)?.toInt()) ?? 0),
+    );
+    final orgTotalBalance = organizations.fold<int>(
       0,
       (sum, item) => sum + (((item['ratubles'] as num?)?.toInt()) ?? 0),
     );
@@ -277,6 +329,11 @@ class RatublesPage extends StatelessWidget {
                   InfoRow(label: 'Максимум', value: '$highestBalance'),
                   if (users.isNotEmpty)
                     InfoRow(label: 'Сумма в реестре', value: '$totalBalance'),
+                  if (organizations.isNotEmpty)
+                    InfoRow(
+                      label: 'Баланс организаций',
+                      value: '$orgTotalBalance',
+                    ),
                 ],
               ),
             ),
@@ -290,14 +347,14 @@ class RatublesPage extends StatelessWidget {
                     )
                   : Column(
                       children: [
-                        DropdownButtonFormField<int>(
-                          initialValue: selectedRecipientId,
+                        DropdownButtonFormField<String>(
+                          initialValue: selectedRecipientKey,
                           items: recipients
                               .map(
-                                (user) => DropdownMenuItem<int>(
-                                  value: user['id'] as int,
+                                (target) => DropdownMenuItem<String>(
+                                  value: '${target['kind']}:${target['id']}',
                                   child: Text(
-                                    '${user['full_name']} (${user['uin']})',
+                                    '${target['full_name']} · ${target['code']}',
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -307,6 +364,11 @@ class RatublesPage extends StatelessWidget {
                           decoration: const InputDecoration(
                             labelText: 'Получатель',
                           ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'В список включены граждане и организации RGOV.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                         const SizedBox(height: 14),
                         TextField(
@@ -492,10 +554,14 @@ class ReferendaPage extends StatelessWidget {
     required this.referendumDescriptionController,
     required this.referendumTextController,
     required this.referendumLawIdController,
+    required this.referendumSubjectController,
     required this.referendumTargetLevel,
+    required this.referendumMatterType,
     required this.onTargetLevelChanged,
+    required this.onMatterTypeChanged,
     required this.onCreateReferendum,
     required this.referenda,
+    required this.onSignReferendum,
     required this.onVoteReferendum,
     required this.onPublishReferendum,
   });
@@ -507,10 +573,14 @@ class ReferendaPage extends StatelessWidget {
   final TextEditingController referendumDescriptionController;
   final TextEditingController referendumTextController;
   final TextEditingController referendumLawIdController;
+  final TextEditingController referendumSubjectController;
   final String referendumTargetLevel;
+  final String referendumMatterType;
   final ValueChanged<String?> onTargetLevelChanged;
+  final ValueChanged<String?> onMatterTypeChanged;
   final VoidCallback onCreateReferendum;
   final List<JsonMap> referenda;
+  final ValueChanged<int> onSignReferendum;
   final void Function(int id, String vote) onVoteReferendum;
   final ValueChanged<int> onPublishReferendum;
 
@@ -523,7 +593,7 @@ class ReferendaPage extends StatelessWidget {
           SectionCard(
             title: 'Новый референдум',
             subtitle:
-                'Изменение конституции обязательно проводится через референдум.',
+                'Сначала собираются подписи, затем голосование длится 4 дня и требует кворума 1/3 граждан.',
             child: Column(
               children: [
                 TextField(
@@ -539,6 +609,34 @@ class ReferendaPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
+                  initialValue: referendumMatterType,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'constitution_amendment',
+                      child: Text('Поправка к конституции'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'law_change',
+                      child: Text('Законодательный вопрос'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'deputy_recall',
+                      child: Text('Отзыв депутата'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'official_recall',
+                      child: Text('Отзыв должностного лица'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'government_question',
+                      child: Text('Иной государственный вопрос'),
+                    ),
+                  ],
+                  onChanged: onMatterTypeChanged,
+                  decoration: const InputDecoration(labelText: 'Тип вопроса'),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
                   initialValue: referendumTargetLevel,
                   items: const [
                     DropdownMenuItem(
@@ -550,6 +648,14 @@ class ReferendaPage extends StatelessWidget {
                   onChanged: onTargetLevelChanged,
                   decoration: const InputDecoration(
                     labelText: 'Целевой уровень',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: referendumSubjectController,
+                  decoration: const InputDecoration(
+                    labelText: 'Логин, УИН или УАН должностного лица',
+                    hintText: 'Нужно только для отзыва',
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -582,7 +688,7 @@ class ReferendaPage extends StatelessWidget {
         SectionCard(
           title: 'Референдумы',
           subtitle:
-              'Граждане голосуют, а положительный итог может быть опубликован как закон или поправка.',
+              'Инициативы проходят через подписи, кворум и обязательное исполнение результата.',
           child: referenda.isEmpty
               ? const EmptyStateMessage('Референдумов пока нет.')
               : Column(
@@ -591,11 +697,11 @@ class ReferendaPage extends StatelessWidget {
                         (referendum) => _ReferendumCard(
                           referendum: referendum,
                           busy: busy,
-                          canPublish:
-                              canCreateReferenda &&
-                              ((referendum['yes_votes'] as int? ?? 0) >
-                                  (referendum['no_votes'] as int? ?? 0)) &&
-                              referendum['status'] != 'enacted',
+                          canSign:
+                              referendum['status'] == 'collecting_signatures',
+                          canVote: referendum['status'] == 'open',
+                          canPublish: referendum['status'] == 'approved',
+                          onSign: onSignReferendum,
                           onVote: onVoteReferendum,
                           onPublish: onPublishReferendum,
                         ),
@@ -613,6 +719,12 @@ class ParliamentPage extends StatelessWidget {
     super.key,
     required this.loading,
     required this.busy,
+    required this.parliamentSummary,
+    required this.parliamentElections,
+    required this.partyController,
+    required this.onNominate,
+    required this.onSignCandidate,
+    required this.onVoteCandidate,
     required this.canCreateBills,
     required this.billTitleController,
     required this.billSummaryController,
@@ -626,6 +738,13 @@ class ParliamentPage extends StatelessWidget {
 
   final bool loading;
   final bool busy;
+  final JsonMap? parliamentSummary;
+  final List<JsonMap> parliamentElections;
+  final TextEditingController partyController;
+  final VoidCallback onNominate;
+  final void Function(int electionId, int candidateId) onSignCandidate;
+  final void Function(int electionId, int candidateId, String vote)
+  onVoteCandidate;
   final bool canCreateBills;
   final TextEditingController billTitleController;
   final TextEditingController billSummaryController;
@@ -638,14 +757,102 @@ class ParliamentPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final deputies =
+        parliamentSummary?['deputies'] as List<dynamic>? ?? const <dynamic>[];
+    final activeElection = parliamentSummary?['active_election'] as JsonMap?;
+
     return PageBody(
       loading: loading,
       children: [
+        SectionCard(
+          title: 'Состав парламента',
+          subtitle:
+              'Конституционный состав фиксирован: 20 депутатов, кворум для работы не ниже 10.',
+          child: parliamentSummary == null
+              ? const EmptyStateMessage('Сводка по парламенту загружается.')
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        Chip(
+                          label: Text(
+                            'Мест: ${parliamentSummary?['seat_count'] ?? 20}',
+                          ),
+                        ),
+                        Chip(
+                          label: Text(
+                            'Кворум: ${parliamentSummary?['quorum'] ?? 10}',
+                          ),
+                        ),
+                        Chip(
+                          label: Text(
+                            'Вакансии: ${parliamentSummary?['vacancies'] ?? 20}',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (deputies.isEmpty)
+                      const Text('Действующих депутатов пока нет.')
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: deputies
+                            .map(
+                              (item) => Chip(
+                                label: Text(
+                                  'Место ${(item as JsonMap)['seat_number']}: ${item['full_name']}',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 18),
+        if (activeElection != null) ...[
+          SectionCard(
+            title: 'Активные выборы',
+            subtitle:
+                'Самовыдвижение возможно после сбора подписей, а избиратель может поддержать кандидатов на число вакантных мест.',
+            child: Column(
+              children: [
+                TextField(
+                  controller: partyController,
+                  decoration: const InputDecoration(
+                    labelText: 'Партия',
+                    hintText: 'Оставьте пустым для самовыдвижения по подписям',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                FilledButton(
+                  onPressed: busy ? null : onNominate,
+                  child: const Text('Выдвинуть свою кандидатуру'),
+                ),
+                const SizedBox(height: 18),
+                ...parliamentElections.map(
+                  (election) => _ParliamentElectionCard(
+                    election: election,
+                    busy: busy,
+                    onSignCandidate: onSignCandidate,
+                    onVoteCandidate: onVoteCandidate,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+        ],
         if (canCreateBills) ...[
           SectionCard(
             title: 'Новый законопроект',
             subtitle:
-                'Парламент создаёт и изменяет законы. Конституция проходит только через референдум.',
+                'Закон принимается только при кворуме и большинстве голосов действующих депутатов.',
             child: Column(
               children: [
                 TextField(
@@ -690,7 +897,8 @@ class ParliamentPage extends StatelessWidget {
         ],
         SectionCard(
           title: 'Парламентская лента',
-          subtitle: 'Открытые инициативы, голоса и публикация законов.',
+          subtitle:
+              'Законопроекты учитывают конституционный кворум парламента.',
           child: bills.isEmpty
               ? const EmptyStateMessage('Законопроектов пока нет.')
               : Column(
@@ -803,11 +1011,15 @@ class AdminPage extends StatelessWidget {
     required this.canManagePermissions,
     required this.canMintRatubles,
     required this.canReadAdminLogs,
+    required this.canReadExternalAuthApps,
+    required this.canApproveExternalAuthApps,
     required this.users,
     required this.organizations,
     required this.ledger,
     required this.adminLogs,
+    required this.externalAuthApps,
     required this.selectedUserId,
+    required this.selectedMintTargetKey,
     required this.selectedOrganizationSlug,
     required this.orgNameController,
     required this.orgSlugController,
@@ -831,6 +1043,7 @@ class AdminPage extends StatelessWidget {
     required this.mintAmountController,
     required this.mintReasonController,
     required this.onSelectedUserChanged,
+    required this.onSelectedMintTargetChanged,
     required this.onSelectedOrganizationChanged,
     required this.onCreateOrganization,
     required this.onHireSelectedUser,
@@ -839,6 +1052,8 @@ class AdminPage extends StatelessWidget {
     required this.onCreateUser,
     required this.onUpdateSelectedUser,
     required this.onMintRatubles,
+    required this.onApproveExternalAuthApp,
+    required this.onDeactivateExternalAuthApp,
   });
 
   final bool loading;
@@ -851,11 +1066,15 @@ class AdminPage extends StatelessWidget {
   final bool canManagePermissions;
   final bool canMintRatubles;
   final bool canReadAdminLogs;
+  final bool canReadExternalAuthApps;
+  final bool canApproveExternalAuthApps;
   final List<JsonMap> users;
   final List<JsonMap> organizations;
   final List<JsonMap> ledger;
   final List<JsonMap> adminLogs;
+  final List<JsonMap> externalAuthApps;
   final int? selectedUserId;
+  final String? selectedMintTargetKey;
   final String? selectedOrganizationSlug;
   final TextEditingController orgNameController;
   final TextEditingController orgSlugController;
@@ -879,6 +1098,7 @@ class AdminPage extends StatelessWidget {
   final TextEditingController mintAmountController;
   final TextEditingController mintReasonController;
   final ValueChanged<int?> onSelectedUserChanged;
+  final ValueChanged<String?> onSelectedMintTargetChanged;
   final ValueChanged<String?> onSelectedOrganizationChanged;
   final VoidCallback onCreateOrganization;
   final VoidCallback onHireSelectedUser;
@@ -887,6 +1107,8 @@ class AdminPage extends StatelessWidget {
   final VoidCallback onCreateUser;
   final VoidCallback onUpdateSelectedUser;
   final VoidCallback onMintRatubles;
+  final ValueChanged<int> onApproveExternalAuthApp;
+  final ValueChanged<int> onDeactivateExternalAuthApp;
 
   @override
   Widget build(BuildContext context) {
@@ -925,6 +1147,26 @@ class AdminPage extends StatelessWidget {
           ),
         )
         .toList();
+    final mintTargetItems = [
+      ...users.map(
+        (user) => DropdownMenuItem<String>(
+          value: 'user:${user['id']}',
+          child: Text(
+            '${user['full_name']} (${user['login']})',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+      ...organizations.map(
+        (organization) => DropdownMenuItem<String>(
+          value: 'organization:${organization['id']}',
+          child: Text(
+            '${organization['name']} (${organization['slug']})',
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    ];
 
     return PageBody(
       loading: loading,
@@ -960,6 +1202,21 @@ class AdminPage extends StatelessWidget {
                       child: const Text('Создать организацию'),
                     ),
                   ],
+                ),
+              ),
+            if (organizations.isNotEmpty)
+              SectionCard(
+                title: 'Баланс организаций',
+                subtitle:
+                    'Каждая организация теперь может хранить собственные Ratubles на отдельном балансе.',
+                child: Column(
+                  children: organizations
+                      .map(
+                        (organization) => _OrganizationBalanceTile(
+                          organization: organization,
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             if (canManagePersonnel)
@@ -1191,16 +1448,21 @@ class AdminPage extends StatelessWidget {
               SectionCard(
                 title: 'Эмиссия Ratubles',
                 subtitle:
-                    'Администратор может начислить выбранному пользователю сумму с обязательной причиной.',
+                    'Администратор может начислить сумму как пользователю, так и организации с обязательной причиной.',
                 child: Column(
                   children: [
-                    DropdownButtonFormField<int>(
-                      initialValue: selectedUserId,
-                      items: userItems,
-                      onChanged: onSelectedUserChanged,
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedMintTargetKey,
+                      items: mintTargetItems,
+                      onChanged: onSelectedMintTargetChanged,
                       decoration: const InputDecoration(
                         labelText: 'Получатель',
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Начисление сразу попадает в общий ledger Ratubles.',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -1224,6 +1486,33 @@ class AdminPage extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            if (canReadExternalAuthApps)
+              SectionCard(
+                title: 'Внешняя авторизация',
+                subtitle:
+                    'Сторонние приложения используют OAuth 2.0 redirect/consent flow и получают токены только после одобрения администратором.',
+                child: externalAuthApps.isEmpty
+                    ? const EmptyStateMessage(
+                        'Запросов на внешнюю авторизацию пока нет.',
+                      )
+                    : Column(
+                        children: externalAuthApps
+                            .map(
+                              (application) => _ExternalAuthAppTile(
+                                application: application,
+                                busy: busy,
+                                canApprove: canApproveExternalAuthApps,
+                                onApprove: () => onApproveExternalAuthApp(
+                                  application['id'] as int,
+                                ),
+                                onDeactivate: () => onDeactivateExternalAuthApp(
+                                  application['id'] as int,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
               ),
           ],
         ),
@@ -1277,6 +1566,171 @@ class AdminPage extends StatelessWidget {
   }
 }
 
+class _OrganizationBalanceTile extends StatelessWidget {
+  const _OrganizationBalanceTile({required this.organization});
+
+  final JsonMap organization;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = organization['name']?.toString() ?? 'Без названия';
+    final slug = organization['slug']?.toString() ?? 'unknown';
+    final description = organization['description']?.toString() ?? '';
+    final ratubles = organization['ratubles']?.toString() ?? '0';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: appInsetColor(context),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$name · $ratubles Ratubles',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: appTextColor(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Slug: $slug',
+            style: TextStyle(color: appMutedTextColor(context)),
+          ),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              description,
+              style: TextStyle(color: appMutedTextColor(context, 0.82)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ExternalAuthAppTile extends StatelessWidget {
+  const _ExternalAuthAppTile({
+    required this.application,
+    required this.busy,
+    required this.canApprove,
+    required this.onApprove,
+    required this.onDeactivate,
+  });
+
+  final JsonMap application;
+  final bool busy;
+  final bool canApprove;
+  final VoidCallback onApprove;
+  final VoidCallback onDeactivate;
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = application['is_approved'] == true;
+    final active = application['is_active'] == true;
+    final name = application['name']?.toString() ?? 'Без названия';
+    final clientId = application['client_id']?.toString() ?? 'unknown';
+    final contactEmail = application['contact_email']?.toString() ?? '';
+    final homepageUrl = application['homepage_url']?.toString() ?? '';
+    final redirectUri = application['redirect_uri']?.toString() ?? '';
+    final approvedBy = application['approved_by_name']?.toString() ?? '';
+    final lastTokenIssuedAt = application['last_token_issued_at'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: appInsetColor(context),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            name,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: appTextColor(context),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Client ID: $clientId',
+            style: TextStyle(color: appMutedTextColor(context)),
+          ),
+          if (contactEmail.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Контакт: $contactEmail',
+              style: TextStyle(color: appMutedTextColor(context)),
+            ),
+          ],
+          if (homepageUrl.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Сайт: $homepageUrl',
+              style: TextStyle(color: appMutedTextColor(context)),
+            ),
+          ],
+          if (redirectUri.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Redirect URI: $redirectUri',
+              style: TextStyle(color: appMutedTextColor(context)),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            approved
+                ? 'Статус: ${active ? 'Одобрено' : 'Отключено'}'
+                : 'Статус: Ожидает одобрения',
+            style: TextStyle(
+              color: approved && active ? moss : brick,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (approvedBy.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Одобрил: $approvedBy',
+              style: TextStyle(color: appMutedTextColor(context)),
+            ),
+          ],
+          if (lastTokenIssuedAt != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Последний токен: ${formatTimestamp(lastTokenIssuedAt)}',
+              style: TextStyle(color: appMutedTextColor(context)),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (canApprove)
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                if (!approved)
+                  FilledButton.tonal(
+                    onPressed: busy ? null : onApprove,
+                    child: const Text('Одобрить'),
+                  ),
+                if (approved && active)
+                  OutlinedButton(
+                    onPressed: busy ? null : onDeactivate,
+                    child: const Text('Отключить'),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DidCard extends StatelessWidget {
   const _DidCard({required this.profile, required this.did});
 
@@ -1297,13 +1751,23 @@ class _DidCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFFDF8F2), Color(0xFFF0E0D1)],
-          ),
+          gradient: isDarkTheme(context)
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF211A16), Color(0xFF342722)],
+                )
+              : const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFFFDF8F2), Color(0xFFF0E0D1)],
+                ),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: lacquer.withValues(alpha: 0.08)),
+          border: Border.all(
+            color: (isDarkTheme(context) ? Colors.white : lacquer).withValues(
+              alpha: 0.08,
+            ),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1334,7 +1798,9 @@ class _DidCard extends StatelessWidget {
                   width: 120,
                   height: 152,
                   decoration: BoxDecoration(
-                    color: parchmentStrong,
+                    color: isDarkTheme(context)
+                        ? appSoftFillColor(context)
+                        : parchmentStrong,
                     borderRadius: BorderRadius.circular(22),
                   ),
                   clipBehavior: Clip.antiAlias,
@@ -1713,9 +2179,11 @@ class _LawCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final level = law['level'].toString() == 'constitution'
-        ? 'Конституция'
-        : 'Закон';
+    final level = switch (law['level'].toString()) {
+      'constitution' => 'Конституция',
+      'resolution' => 'Резолюция',
+      _ => 'Закон',
+    };
     final via = switch (law['adopted_via'].toString()) {
       'referendum' => 'референдум',
       'parliament' => 'парламент',
@@ -1770,24 +2238,189 @@ class _LawCard extends StatelessWidget {
   }
 }
 
+class _ParliamentElectionCard extends StatelessWidget {
+  const _ParliamentElectionCard({
+    required this.election,
+    required this.busy,
+    required this.onSignCandidate,
+    required this.onVoteCandidate,
+  });
+
+  final JsonMap election;
+  final bool busy;
+  final void Function(int electionId, int candidateId) onSignCandidate;
+  final void Function(int electionId, int candidateId, String vote)
+  onVoteCandidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final electionId = election['id'] as int;
+    final candidates =
+        election['candidates'] as List<dynamic>? ?? const <dynamic>[];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: parchment,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              election['title'].toString(),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: lacquer,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Статус: ${election['status']} · мест: ${election['seat_count']} · бюллетеней: ${election['total_ballots']}',
+            ),
+            const SizedBox(height: 4),
+            Text('Закрытие: ${formatTimestamp(election['closes_at'])}'),
+            const SizedBox(height: 12),
+            if (candidates.isEmpty)
+              const Text('Кандидатов пока нет.')
+            else
+              Column(
+                children: candidates.map((item) {
+                  final candidate = item as JsonMap;
+                  final candidateId = candidate['id'] as int;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: parchmentStrong.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            candidate['full_name'].toString(),
+                            style: const TextStyle(
+                              color: lacquer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (candidate['party_name'] != null &&
+                              candidate['party_name']
+                                  .toString()
+                                  .isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(candidate['party_name'].toString()),
+                          ],
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              Chip(
+                                label: Text(
+                                  'Подписи: ${candidate['signatures']}/${candidate['required_signatures']}',
+                                ),
+                              ),
+                              Chip(
+                                label: Text('Голоса: ${candidate['votes']}'),
+                              ),
+                              Chip(
+                                label: Text('Статус: ${candidate['status']}'),
+                              ),
+                            ],
+                          ),
+                          if (election['status'] == 'open') ...[
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                if (candidate['status'] ==
+                                    'collecting_signatures')
+                                  FilledButton.tonal(
+                                    onPressed: busy
+                                        ? null
+                                        : () => onSignCandidate(
+                                            electionId,
+                                            candidateId,
+                                          ),
+                                    child: const Text('Подписать'),
+                                  ),
+                                if (candidate['status'] == 'registered') ...[
+                                  FilledButton.tonal(
+                                    onPressed: busy
+                                        ? null
+                                        : () => onVoteCandidate(
+                                            electionId,
+                                            candidateId,
+                                            'yes',
+                                          ),
+                                    child: const Text('В бюллетень'),
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: busy
+                                        ? null
+                                        : () => onVoteCandidate(
+                                            electionId,
+                                            candidateId,
+                                            'no',
+                                          ),
+                                    child: const Text('Убрать'),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReferendumCard extends StatelessWidget {
   const _ReferendumCard({
     required this.referendum,
     required this.busy,
+    required this.canSign,
+    required this.canVote,
     required this.canPublish,
+    required this.onSign,
     required this.onVote,
     required this.onPublish,
   });
 
   final JsonMap referendum;
   final bool busy;
+  final bool canSign;
+  final bool canVote;
   final bool canPublish;
+  final ValueChanged<int> onSign;
   final void Function(int id, String vote) onVote;
   final ValueChanged<int> onPublish;
 
   @override
   Widget build(BuildContext context) {
-    final isConstitution = referendum['target_level'] == 'constitution';
+    final kind = switch (referendum['matter_type'].toString()) {
+      'constitution_amendment' => 'Поправка к конституции',
+      'deputy_recall' => 'Отзыв депутата',
+      'official_recall' => 'Отзыв должностного лица',
+      'government_question' => 'Государственный вопрос',
+      _ => 'Законодательный референдум',
+    };
+    final timeline = referendum['status'] == 'collecting_signatures'
+        ? 'сбор подписей'
+        : formatTimestamp(referendum['closes_at']);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1808,11 +2441,11 @@ class _ReferendumCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              '${isConstitution ? 'Поправка к конституции' : 'Законодательный референдум'} · '
-              '${referendum['proposer_name']} · '
-              '${formatTimestamp(referendum['closes_at'])}',
-            ),
+            Text('$kind · ${referendum['proposer_name']} · $timeline'),
+            if (referendum['subject_name'] != null) ...[
+              const SizedBox(height: 4),
+              Text('Объект вопроса: ${referendum['subject_name']}'),
+            ],
             const SizedBox(height: 10),
             if (referendum['description'] != null &&
                 referendum['description'].toString().isNotEmpty) ...[
@@ -1829,8 +2462,18 @@ class _ReferendumCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 Chip(label: Text('Статус: ${referendum['status']}')),
+                Chip(
+                  label: Text(
+                    'Подписи: ${referendum['signature_count']}/${referendum['required_signatures']}',
+                  ),
+                ),
                 Chip(label: Text('За: ${referendum['yes_votes']}')),
                 Chip(label: Text('Против: ${referendum['no_votes']}')),
+                Chip(
+                  label: Text(
+                    'Кворум: ${referendum['total_votes']}/${referendum['required_quorum']}',
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -1838,18 +2481,27 @@ class _ReferendumCard extends StatelessWidget {
               spacing: 10,
               runSpacing: 10,
               children: [
-                FilledButton.tonal(
-                  onPressed: busy
-                      ? null
-                      : () => onVote(referendum['id'] as int, 'yes'),
-                  child: const Text('Голосовать за'),
-                ),
-                OutlinedButton(
-                  onPressed: busy
-                      ? null
-                      : () => onVote(referendum['id'] as int, 'no'),
-                  child: const Text('Голосовать против'),
-                ),
+                if (canSign)
+                  FilledButton.tonal(
+                    onPressed: busy
+                        ? null
+                        : () => onSign(referendum['id'] as int),
+                    child: const Text('Подписать инициативу'),
+                  ),
+                if (canVote) ...[
+                  FilledButton.tonal(
+                    onPressed: busy
+                        ? null
+                        : () => onVote(referendum['id'] as int, 'yes'),
+                    child: const Text('Голосовать за'),
+                  ),
+                  OutlinedButton(
+                    onPressed: busy
+                        ? null
+                        : () => onVote(referendum['id'] as int, 'no'),
+                    child: const Text('Голосовать против'),
+                  ),
+                ],
                 if (canPublish)
                   FilledButton(
                     onPressed: busy
@@ -1883,10 +2535,7 @@ class _BillCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canPublish =
-        canAct &&
-        (bill['yes_votes'] as int? ?? 0) > (bill['no_votes'] as int? ?? 0) &&
-        bill['status'] != 'enacted';
+    final canPublish = canAct && bill['status'] == 'approved';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -1925,6 +2574,11 @@ class _BillCard extends StatelessWidget {
                 Chip(label: Text('Статус: ${bill['status']}')),
                 Chip(label: Text('За: ${bill['yes_votes']}')),
                 Chip(label: Text('Против: ${bill['no_votes']}')),
+                Chip(
+                  label: Text(
+                    'Кворум: ${bill['total_votes']}/${bill['quorum_required']}',
+                  ),
+                ),
               ],
             ),
             if (canAct) ...[
@@ -2135,6 +2789,17 @@ class _RatublesTransactionTile extends StatelessWidget {
     final kind = transaction['kind']?.toString() ?? 'transfer';
     final amount = transaction['amount']?.toString() ?? '0';
     final reason = transaction['reason']?.toString() ?? '';
+    final senderName = transaction['sender_name']?.toString() ?? 'Неизвестно';
+    final senderCode = transaction['sender_code']?.toString();
+    final recipientName =
+        transaction['recipient_name']?.toString() ?? 'Неизвестно';
+    final recipientCode = transaction['recipient_code']?.toString();
+    final senderLabel = senderCode == null || senderCode.isEmpty
+        ? senderName
+        : '$senderName ($senderCode)';
+    final recipientLabel = recipientCode == null || recipientCode.isEmpty
+        ? recipientName
+        : '$recipientName ($recipientCode)';
     final directionLabel = switch ((kind, direction)) {
       ('mint', _) => 'Начисление',
       (_, 'incoming') => 'Входящий перевод',
@@ -2142,12 +2807,10 @@ class _RatublesTransactionTile extends StatelessWidget {
       _ => 'Транзакция',
     };
     final counterpart = switch ((kind, direction)) {
-      ('mint', _) => transaction['recipient_name']?.toString() ?? 'Неизвестно',
-      (_, 'incoming') => transaction['sender_name']?.toString() ?? 'Неизвестно',
-      (_, 'outgoing') =>
-        transaction['recipient_name']?.toString() ?? 'Неизвестно',
-      _ =>
-        '${transaction['sender_name'] ?? 'Неизвестно'} -> ${transaction['recipient_name'] ?? 'Неизвестно'}',
+      ('mint', _) => recipientLabel,
+      (_, 'incoming') => senderLabel,
+      (_, 'outgoing') => recipientLabel,
+      _ => '$senderLabel -> $recipientLabel',
     };
 
     return Padding(

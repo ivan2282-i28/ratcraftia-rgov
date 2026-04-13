@@ -21,6 +21,7 @@ class Organization(Timestamped, table=True):
     slug: str = Field(index=True, unique=True)
     kind: str = Field(default="government")
     description: str = Field(default="")
+    ratubles: int = Field(default=0, nullable=False)
 
 
 class User(Timestamped, table=True):
@@ -47,7 +48,12 @@ class RatublesTransaction(Timestamped, table=True):
     amount: int = Field(nullable=False)
     reason: str = Field(default="", nullable=False)
     sender_id: int | None = Field(default=None, foreign_key="user.id", index=True)
-    recipient_id: int = Field(foreign_key="user.id", index=True)
+    recipient_id: int | None = Field(default=None, foreign_key="user.id", index=True)
+    recipient_org_id: int | None = Field(
+        default=None,
+        foreign_key="organization.id",
+        index=True,
+    )
     actor_id: int = Field(foreign_key="user.id", index=True)
 
 
@@ -59,6 +65,36 @@ class AdminLog(Timestamped, table=True):
     reason: str = Field(default="", nullable=False)
     target_user_id: int | None = Field(default=None, foreign_key="user.id", index=True)
     target_label: str = Field(default="", nullable=False)
+
+
+class ExternalAuthApplication(Timestamped, table=True):
+    __tablename__ = "external_auth_application"
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    description: str = Field(default="")
+    homepage_url: str = Field(default="")
+    contact_email: str = Field(default="")
+    redirect_uri: str = Field(default="")
+    client_id: str = Field(index=True, unique=True)
+    client_secret_hash: str
+    is_approved: bool = Field(default=False, nullable=False)
+    approved_at: datetime | None = Field(default=None)
+    approved_by_id: int | None = Field(default=None, foreign_key="user.id", index=True)
+    is_active: bool = Field(default=False, nullable=False)
+    last_token_issued_at: datetime | None = Field(default=None)
+
+
+class OAuthAuthorizationCode(Timestamped, table=True):
+    __tablename__ = "oauth_authorization_code"
+
+    id: int | None = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="external_auth_application.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    code_hash: str = Field(index=True, unique=True)
+    redirect_uri: str
+    expires_at: datetime
+    used_at: datetime | None = Field(default=None)
 
 
 class PushSubscription(Timestamped, table=True):
@@ -125,6 +161,74 @@ class BillVote(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utc_now, nullable=False)
 
 
+class DeputyMandate(Timestamped, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    seat_number: int = Field(index=True)
+    deputy_id: int = Field(foreign_key="user.id", index=True)
+    election_id: int | None = Field(default=None, foreign_key="parliamentelection.id")
+    status: str = Field(default="active", index=True)
+    starts_at: datetime = Field(default_factory=utc_now)
+    ends_at: datetime = Field(default_factory=utc_now)
+    ended_at: datetime | None = Field(default=None)
+    ended_reason: str = Field(default="")
+
+
+class ParliamentElection(Timestamped, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    kind: str = Field(default="general", index=True)
+    status: str = Field(default="open", index=True)
+    seat_count: int = Field(default=20)
+    created_by_id: int | None = Field(default=None, foreign_key="user.id", index=True)
+    opens_at: datetime = Field(default_factory=utc_now)
+    closes_at: datetime = Field(default_factory=lambda: utc_now() + timedelta(days=4))
+
+
+class ParliamentCandidate(Timestamped, table=True):
+    __table_args__ = (
+        UniqueConstraint("election_id", "user_id", name="uq_parliament_candidate_user"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    election_id: int = Field(foreign_key="parliamentelection.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    party_name: str = Field(default="")
+    status: str = Field(default="collecting_signatures", index=True)
+    required_signatures: int = Field(default=1)
+
+
+class ParliamentCandidateSignature(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_id",
+            "signer_id",
+            name="uq_parliament_candidate_signature",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    candidate_id: int = Field(foreign_key="parliamentcandidate.id", index=True)
+    signer_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
+class ParliamentElectionVote(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint(
+            "election_id",
+            "voter_id",
+            "candidate_id",
+            name="uq_parliament_election_vote",
+        ),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    election_id: int = Field(foreign_key="parliamentelection.id", index=True)
+    voter_id: int = Field(foreign_key="user.id", index=True)
+    candidate_id: int = Field(foreign_key="parliamentcandidate.id", index=True)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
 class Referendum(Timestamped, table=True):
     id: int | None = Field(default=None, primary_key=True)
     title: str
@@ -132,10 +236,14 @@ class Referendum(Timestamped, table=True):
     proposed_text: str
     law_id: int | None = Field(default=None, foreign_key="law.id")
     target_level: str = Field(default="constitution", index=True)
-    status: str = Field(default="open", index=True)
+    matter_type: str = Field(default="constitution_amendment", index=True)
+    status: str = Field(default="collecting_signatures", index=True)
     proposer_id: int = Field(foreign_key="user.id")
+    subject_user_id: int | None = Field(default=None, foreign_key="user.id", index=True)
+    required_signatures: int = Field(default=1)
+    required_quorum: int = Field(default=1)
     opens_at: datetime = Field(default_factory=utc_now)
-    closes_at: datetime = Field(default_factory=lambda: utc_now() + timedelta(days=7))
+    closes_at: datetime = Field(default_factory=utc_now)
 
 
 class ReferendumVote(SQLModel, table=True):
@@ -147,4 +255,15 @@ class ReferendumVote(SQLModel, table=True):
     referendum_id: int = Field(foreign_key="referendum.id", index=True)
     voter_id: int = Field(foreign_key="user.id", index=True)
     vote: str = Field(index=True)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
+class ReferendumSignature(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("referendum_id", "signer_id", name="uq_referendum_signature"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    referendum_id: int = Field(foreign_key="referendum.id", index=True)
+    signer_id: int = Field(foreign_key="user.id", index=True)
     created_at: datetime = Field(default_factory=utc_now, nullable=False)

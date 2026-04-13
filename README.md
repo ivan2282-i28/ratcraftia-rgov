@@ -9,9 +9,14 @@ RGOV — Ratcraftia Government Web Portal. Проект собран как мо
 ## Возможности
 
 - JWT-авторизация:
-  - УИН + пароль
-  - УИН + УАН
-  - логин + пароль
+  - единая форма: `логин или УИН` + `пароль или УАН`
+- Профиль доступа:
+  - смена логина
+  - смена пароля
+- Внешняя авторизация для сторонних сервисов:
+  - запрос приложения через API
+  - OAuth 2.0 authorization code flow с browser redirect и consent
+  - выпуск OAuth-токенов только после одобрения приложения администратором
 - GovMail:
   - `UIN@citizen`
   - `Initials.Organization@gov`
@@ -33,6 +38,7 @@ RGOV — Ratcraftia Government Web Portal. Проект собран как мо
 - Исполнительный контур:
   - публикация и удаление новостей
   - создание организаций
+  - организациям можно хранить собственный баланс Ratubles
   - приём на работу и увольнение
   - управление правами доступа через permissions
 
@@ -117,3 +123,11 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000/api
 - Старые поля ролей автоматически мигрируются в `permissions` при запуске backend.
 - УАН в списках пользователей маскируется, но остаётся доступен владельцу в профиле и DID.
 - Смена логина ограничена одним разом в сутки по часовому поясу `Europe/Moscow`.
+- Внешняя авторизация:
+  - `POST /api/oauth/apps/request` — регистрация внешнего приложения с `redirect_uri`
+  - `GET /api/oauth/apps/{client_id}/status` — проверка статуса одобрения
+  - `GET /api/oauth/authorize` — browser redirect/consent страница
+  - `POST /api/oauth/token` — обмен authorization code на access token
+  - `GET /api/oauth/me` — минимальный профиль по внешнему токену
+  - в web UI есть публичная форма для создания `client_id` и `client_secret`
+  - одобрение и отключение выполняются через раздел управления или admin API

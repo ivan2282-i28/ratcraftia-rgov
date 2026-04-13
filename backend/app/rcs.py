@@ -13,6 +13,7 @@ from .services.permissions import permissions_label
 from .services.portal import (
     change_user_permissions,
     create_bill,
+    create_referendum,
     delete_news,
     create_org,
     create_user,
@@ -188,7 +189,9 @@ def cmd_create_referendum(args: argparse.Namespace) -> None:
                 proposed_text=args.text,
                 law_id=args.law_id,
                 target_level=args.target_level,
-                closes_in_days=args.closes_in_days,
+                matter_type=args.matter_type,
+                subject_identifier=args.subject_identifier,
+                closes_in_days=4,
             ),
         )
         print(f"Создан референдум #{referendum.id}: {referendum.title}")
@@ -207,8 +210,11 @@ def cmd_vote_referendum(args: argparse.Namespace) -> None:
 def cmd_publish_referendum(args: argparse.Namespace) -> None:
     with _open_session() as session:
         actor = _get_user_by_uin(session, args.actor_uin)
-        law = publish_referendum(session, actor, args.referendum_id)
-        print(f"Результат референдума опубликован: {law.title} v{law.version}")
+        outcome = publish_referendum(session, actor, args.referendum_id)
+        if outcome.law:
+            print(f"Результат референдума опубликован: {outcome.law.title} v{outcome.law.version}")
+        else:
+            print(outcome.detail)
 
 
 def cmd_send_mail(args: argparse.Namespace) -> None:
@@ -313,8 +319,23 @@ def build_parser() -> argparse.ArgumentParser:
     referendum_parser.add_argument("--description", default="")
     referendum_parser.add_argument("--text", required=True)
     referendum_parser.add_argument("--law-id", type=int)
-    referendum_parser.add_argument("--target-level", choices=["law", "constitution"], default="constitution")
-    referendum_parser.add_argument("--closes-in-days", type=int, default=7)
+    referendum_parser.add_argument(
+        "--target-level",
+        choices=["law", "constitution", "resolution"],
+        default="constitution",
+    )
+    referendum_parser.add_argument(
+        "--matter-type",
+        choices=[
+            "constitution_amendment",
+            "law_change",
+            "deputy_recall",
+            "official_recall",
+            "government_question",
+        ],
+        default="constitution_amendment",
+    )
+    referendum_parser.add_argument("--subject-identifier")
     referendum_parser.set_defaults(func=cmd_create_referendum)
 
     vote_ref_parser = subparsers.add_parser("vote-referendum")

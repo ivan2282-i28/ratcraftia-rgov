@@ -5,12 +5,80 @@ from sqlmodel import Session, select
 
 from ..core.security import get_current_user
 from ..db import get_session
-from ..models import Bill, User
-from ..schemas import BillCreate, BillRead, LawRead, VoteRequest
-from ..services.portal import create_bill, publish_bill, serialize_bill, vote_bill
+from ..models import Bill, ParliamentElection, User
+from ..schemas import (
+    BillCreate,
+    BillRead,
+    LawRead,
+    ParliamentCandidateCreate,
+    ParliamentElectionRead,
+    ParliamentSummaryRead,
+    VoteRequest,
+)
+from ..services.portal import (
+    create_bill,
+    list_parliament_elections,
+    nominate_parliament_candidate,
+    publish_bill,
+    serialize_bill,
+    serialize_parliament_summary,
+    sign_parliament_candidate,
+    vote_bill,
+    vote_parliament_candidate,
+)
 
 
 router = APIRouter(prefix="/api/parliament", tags=["parliament"])
+
+
+@router.get("/summary", response_model=ParliamentSummaryRead)
+def parliament_summary(session: Session = Depends(get_session)) -> ParliamentSummaryRead:
+    return serialize_parliament_summary(session)
+
+
+@router.get("/elections", response_model=list[ParliamentElectionRead])
+def elections_list(session: Session = Depends(get_session)) -> list[ParliamentElectionRead]:
+    return list_parliament_elections(session)
+
+
+@router.post("/elections/{election_id}/candidates", response_model=ParliamentElectionRead)
+def nominate_candidate(
+    election_id: int,
+    payload: ParliamentCandidateCreate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ParliamentElectionRead:
+    try:
+        return nominate_parliament_candidate(session, user, election_id, payload)
+    except (PermissionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/elections/{election_id}/candidates/{candidate_id}/sign", response_model=ParliamentElectionRead)
+def sign_candidate(
+    election_id: int,
+    candidate_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ParliamentElectionRead:
+    try:
+        return sign_parliament_candidate(session, user, election_id, candidate_id)
+    except (PermissionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/elections/{election_id}/candidates/{candidate_id}/vote", response_model=ParliamentElectionRead)
+def cast_candidate_vote(
+    election_id: int,
+    candidate_id: int,
+    payload: VoteRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ParliamentElectionRead:
+    try:
+        return vote_parliament_candidate(session, user, election_id, candidate_id, payload.vote)
+    except (PermissionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
 @router.get("/bills", response_model=list[BillRead])

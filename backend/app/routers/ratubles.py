@@ -7,10 +7,10 @@ from ..core.security import get_current_user
 from ..db import get_session
 from ..models import User
 from ..schemas import (
+    RatublesDirectoryEntryRead,
     RatublesMintRequest,
     RatublesTransactionRead,
     RatublesTransferRequest,
-    UserDirectoryRead,
 )
 from ..services.portal import (
     list_all_transactions,
@@ -24,11 +24,11 @@ from ..services.portal import (
 router = APIRouter(prefix="/api/ratubles", tags=["ratubles"])
 
 
-@router.get("/directory", response_model=list[UserDirectoryRead])
+@router.get("/directory", response_model=list[RatublesDirectoryEntryRead])
 def get_directory(
     _: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> list[UserDirectoryRead]:
+) -> list[RatublesDirectoryEntryRead]:
     return list_transfer_directory(session)
 
 

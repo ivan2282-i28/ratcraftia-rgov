@@ -6,8 +6,14 @@ from sqlmodel import Session, select
 from ..core.security import get_current_user
 from ..db import get_session
 from ..models import Referendum, User
-from ..schemas import LawRead, ReferendumCreate, ReferendumRead, VoteRequest
-from ..services.portal import create_referendum, publish_referendum, serialize_referendum, vote_referendum
+from ..schemas import ReferendumCreate, ReferendumOutcomeRead, ReferendumRead, VoteRequest
+from ..services.portal import (
+    create_referendum,
+    publish_referendum,
+    serialize_referendum,
+    sign_referendum,
+    vote_referendum,
+)
 
 
 router = APIRouter(prefix="/api/referenda", tags=["referenda"])
@@ -46,15 +52,25 @@ def cast_referendum_vote(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
 
-@router.post("/{referendum_id}/publish", response_model=LawRead)
+@router.post("/{referendum_id}/sign", response_model=ReferendumRead)
+def add_referendum_signature(
+    referendum_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ReferendumRead:
+    try:
+        return sign_referendum(session, user, referendum_id)
+    except (PermissionError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/{referendum_id}/publish", response_model=ReferendumOutcomeRead)
 def enact_referendum(
     referendum_id: int,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-) -> LawRead:
+) -> ReferendumOutcomeRead:
     try:
         return publish_referendum(session, user, referendum_id)
-    except PermissionError as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
-    except ValueError as error:
+    except (PermissionError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

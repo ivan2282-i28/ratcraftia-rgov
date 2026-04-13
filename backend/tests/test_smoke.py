@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
 
@@ -70,14 +71,264 @@ def test_bootstrap_creates_only_root_account() -> None:
         assert payload[0]["permissions"] == ["*"]
 
 
-def test_portal_smoke() -> None:
-    db_path = Path("data/test-rgov.db")
+def test_change_password_and_rgov_login() -> None:
+    db_path = Path("data/test-auth-flows.db")
     if db_path.exists():
         db_path.unlink()
     os.environ["RGOV_DATABASE_URL"] = f"sqlite:///{db_path}"
 
     from app.db import reset_engine_cache
     from app.main import app
+
+    reset_engine_cache()
+
+    with TestClient(app) as client:
+        rgov_login = client.post(
+            "/api/auth/login/rgov",
+            json={"login": "root", "password": "RGOV-DEFAULT_ROOT"},
+        )
+        assert rgov_login.status_code == 200
+        token = rgov_login.json()["access_token"]
+        assert rgov_login.json()["profile"]["login"] == "root"
+
+        wrong_change = client.post(
+            "/api/auth/change-password",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "current_password": "WRONG-PASSWORD",
+                "new_password": "RGOV-UPDATED-ROOT",
+            },
+        )
+        assert wrong_change.status_code == 400
+
+        change = client.post(
+            "/api/auth/change-password",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "current_password": "RGOV-DEFAULT_ROOT",
+                "new_password": "RGOV-UPDATED-ROOT",
+            },
+        )
+        assert change.status_code == 200
+        assert change.json()["detail"] == "Пароль обновлён."
+
+        old_login = client.post(
+            "/api/auth/login/rgov",
+            json={"login": "root", "password": "RGOV-DEFAULT_ROOT"},
+        )
+        assert old_login.status_code == 401
+
+        new_rgov_login = client.post(
+            "/api/auth/login/rgov",
+            json={"login": "root", "password": "RGOV-UPDATED-ROOT"},
+        )
+        assert new_rgov_login.status_code == 200
+
+        new_password_login = client.post(
+            "/api/auth/login/password",
+            json={"identifier": "ROOT", "password": "RGOV-UPDATED-ROOT"},
+        )
+        assert new_password_login.status_code == 200
+
+        universal_password_login = client.post(
+            "/api/auth/login",
+            json={"identifier": "root", "secret": "RGOV-UPDATED-ROOT"},
+        )
+        assert universal_password_login.status_code == 200
+
+        universal_uan_login = client.post(
+            "/api/auth/login",
+            json={"identifier": "ROOT", "secret": "RGOV-ROOT-001"},
+        )
+        assert universal_uan_login.status_code == 200
+
+
+def test_external_auth_tokens_require_admin_approval() -> None:
+    db_path = Path("data/test-external-auth.db")
+    if db_path.exists():
+        db_path.unlink()
+    os.environ["RGOV_DATABASE_URL"] = f"sqlite:///{db_path}"
+
+    from app.db import reset_engine_cache
+    from app.main import app
+
+    reset_engine_cache()
+
+    with TestClient(app) as client:
+        request = client.post(
+            "/api/oauth/apps/request",
+            json={
+                "name": "RatForum SSO",
+                "description": "Вход через RGOV для внешнего форума",
+                "homepage_url": "https://forum.ratcraftia.example",
+                "contact_email": "ops@forum.ratcraftia.example",
+                "redirect_uri": "https://forum.ratcraftia.example/oauth/callback",
+            },
+        )
+        assert request.status_code == 201
+        request_payload = request.json()
+        app_id = request_payload["application"]["id"]
+        client_id = request_payload["application"]["client_id"]
+        client_secret = request_payload["client_secret"]
+        redirect_uri = request_payload["application"]["redirect_uri"]
+        assert request_payload["application"]["is_approved"] is False
+
+        status_pending = client.get(f"/api/oauth/apps/{client_id}/status")
+        assert status_pending.status_code == 200
+        assert status_pending.json()["is_approved"] is False
+
+        pending_authorize = client.get(
+            "/api/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "pending-state",
+            },
+            follow_redirects=False,
+        )
+        assert pending_authorize.status_code == 302
+        pending_query = parse_qs(urlsplit(pending_authorize.headers["location"]).query)
+        assert pending_query["error"] == ["unauthorized_client"]
+
+        admin_login = client.post(
+            "/api/auth/login/rgov",
+            json={"login": "root", "password": "RGOV-DEFAULT_ROOT"},
+        )
+        assert admin_login.status_code == 200
+        admin_token = admin_login.json()["access_token"]
+
+        apps = client.get(
+            "/api/admin/external-auth-apps",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert apps.status_code == 200
+        assert apps.json()[0]["client_id"] == client_id
+
+        approve = client.post(
+            f"/api/admin/external-auth-apps/{app_id}/approve",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert approve.status_code == 200
+        assert approve.json()["is_approved"] is True
+
+        status_approved = client.get(f"/api/oauth/apps/{client_id}/status")
+        assert status_approved.status_code == 200
+        assert status_approved.json()["is_approved"] is True
+
+        authorize_page = client.get(
+            "/api/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "rat-state",
+            },
+        )
+        assert authorize_page.status_code == 200
+        assert "RatForum SSO" in authorize_page.text
+
+        bad_login = client.post(
+            "/api/oauth/authorize",
+            data={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "rat-state",
+                "identifier": "root",
+                "secret": "wrong-password",
+                "decision": "approve",
+            },
+        )
+        assert bad_login.status_code == 200
+        assert "Неверные учётные данные пользователя RGOV." in bad_login.text
+
+        consent = client.post(
+            "/api/oauth/authorize",
+            data={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "rat-state",
+                "identifier": "ROOT",
+                "secret": "RGOV-ROOT-001",
+                "decision": "approve",
+            },
+            follow_redirects=False,
+        )
+        assert consent.status_code == 302
+        consent_query = parse_qs(urlsplit(consent.headers["location"]).query)
+        assert consent_query["state"] == ["rat-state"]
+        code = consent_query["code"][0]
+
+        approved_token = client.post(
+            "/api/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+        )
+        assert approved_token.status_code == 200
+        token_payload = approved_token.json()
+        assert token_payload["token_type"] == "bearer"
+        assert token_payload["expires_in"] > 0
+        external_token = token_payload["access_token"]
+
+        me = client.get(
+            "/api/oauth/me",
+            headers={"Authorization": f"Bearer {external_token}"},
+        )
+        assert me.status_code == 200
+        assert me.json()["login"] == "root"
+        assert "uan" not in me.json()
+
+        reused_code = client.post(
+            "/api/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+        )
+        assert reused_code.status_code == 400
+
+        deactivate = client.post(
+            f"/api/admin/external-auth-apps/{app_id}/deactivate",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert deactivate.status_code == 200
+        assert deactivate.json()["is_active"] is False
+
+        blocked_authorize = client.get(
+            "/api/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": "blocked-state",
+            },
+            follow_redirects=False,
+        )
+        assert blocked_authorize.status_code == 302
+        blocked_query = parse_qs(urlsplit(blocked_authorize.headers["location"]).query)
+        assert blocked_query["error"] == ["unauthorized_client"]
+
+
+def test_portal_smoke() -> None:
+    db_path = Path("data/test-rgov.db")
+    if db_path.exists():
+        db_path.unlink()
+    os.environ["RGOV_DATABASE_URL"] = f"sqlite:///{db_path}"
+
+    from app.db import get_engine, reset_engine_cache
+    from app.main import app
+    from app.models import DeputyMandate, Referendum, utc_now
+    from sqlmodel import Session
 
     reset_engine_cache()
 
@@ -91,13 +342,13 @@ def test_portal_smoke() -> None:
         assert admin_login.status_code == 200
         admin_token = admin_login.json()["access_token"]
 
-        _create_user(
+        parliament_user = _create_user(
             client,
             admin_token,
             uin="1.26.563372",
             uan="RAT-NAV-001",
             login="navaliniy",
-            permissions=["bills.manage", "referenda.manage"],
+            permissions=[],
         )
         _create_user(
             client,
@@ -107,6 +358,31 @@ def test_portal_smoke() -> None:
             login="ivan",
             permissions=[],
         )
+        deputy_users = [
+            _create_user(
+                client,
+                admin_token,
+                uin=f"7.10.90000{index}",
+                uan=f"RAT-DEP-00{index}",
+                login=f"deputy{index}",
+                permissions=[],
+            )
+            for index in range(1, 10)
+        ]
+
+        with Session(get_engine()) as session:
+            deputy_ids = [parliament_user["id"], *[item["id"] for item in deputy_users]]
+            for seat_number, deputy_id in enumerate(deputy_ids, start=1):
+                session.add(
+                    DeputyMandate(
+                        seat_number=seat_number,
+                        deputy_id=deputy_id,
+                        status="active",
+                        starts_at=utc_now(),
+                        ends_at=utc_now().replace(year=utc_now().year + 1),
+                    )
+                )
+            session.commit()
 
         parliament_login = client.post(
             "/api/auth/login/password",
@@ -149,12 +425,22 @@ def test_portal_smoke() -> None:
         assert bill.status_code == 201
         bill_id = bill.json()["id"]
 
-        vote_bill = client.post(
-            f"/api/parliament/bills/{bill_id}/vote",
-            headers={"Authorization": f"Bearer {parliament_token}"},
-            json={"vote": "yes"},
-        )
-        assert vote_bill.status_code == 200
+        deputy_tokens = [parliament_token]
+        for item in deputy_users:
+            login = client.post(
+                "/api/auth/login/password",
+                json={"identifier": item["login"], "password": "ratcraftia"},
+            )
+            assert login.status_code == 200
+            deputy_tokens.append(login.json()["access_token"])
+
+        for token in deputy_tokens:
+            vote_bill = client.post(
+                f"/api/parliament/bills/{bill_id}/vote",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"vote": "yes"},
+            )
+            assert vote_bill.status_code == 200
 
         publish_bill = client.post(
             f"/api/parliament/bills/{bill_id}/publish",
@@ -164,23 +450,42 @@ def test_portal_smoke() -> None:
 
         referendum = client.post(
             "/api/referenda",
-            headers={"Authorization": f"Bearer {parliament_token}"},
+            headers={"Authorization": f"Bearer {citizen_token}"},
             json={
                 "title": "Поправка к конституции",
                 "description": "Тест",
                 "proposed_text": "Статья 2. Демонстрация одобрена.",
                 "target_level": "constitution",
+                "matter_type": "constitution_amendment",
+                "closes_in_days": 4,
             },
         )
         assert referendum.status_code == 201
         referendum_id = referendum.json()["id"]
 
-        vote_ref = client.post(
-            f"/api/referenda/{referendum_id}/vote",
-            headers={"Authorization": f"Bearer {citizen_token}"},
-            json={"vote": "yes"},
-        )
-        assert vote_ref.status_code == 200
+        for token in [parliament_token, admin_token, deputy_tokens[1]]:
+            sign_ref = client.post(
+                f"/api/referenda/{referendum_id}/sign",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert sign_ref.status_code == 200
+
+        for token in [citizen_token, parliament_token, admin_token, deputy_tokens[1]]:
+            vote_ref = client.post(
+                f"/api/referenda/{referendum_id}/vote",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"vote": "yes"},
+            )
+            assert vote_ref.status_code == 200
+
+        with Session(get_engine()) as session:
+            referendum_record = session.get(Referendum, referendum_id)
+            referendum_record.closes_at = utc_now().replace(year=2020)
+            session.add(referendum_record)
+            session.commit()
+
+        referenda = client.get("/api/referenda")
+        assert referenda.status_code == 200
 
         publish_ref = client.post(
             f"/api/referenda/{referendum_id}/publish",
@@ -254,6 +559,26 @@ def test_admin_logs_and_ratubles_history() -> None:
         assert update.json()["uin"] == "8.10.100099"
         assert update.json()["uan"] == "RAT-CITIZEN-099"
 
+        org = client.post(
+            "/api/admin/organizations",
+            headers={"Authorization": f"Bearer {root_token}"},
+            json={
+                "name": "Казначейство",
+                "slug": "treasury-office",
+                "description": "Тестовая организация для кошелька",
+            },
+        )
+        assert org.status_code == 201
+        organization = org.json()
+        assert organization["ratubles"] == 0
+
+        directory = client.get(
+            "/api/ratubles/directory",
+            headers={"Authorization": f"Bearer {root_token}"},
+        )
+        assert directory.status_code == 200
+        assert any(item["kind"] == "organization" for item in directory.json())
+
         mint = client.post(
             "/api/ratubles/mint",
             headers={"Authorization": f"Bearer {root_token}"},
@@ -266,6 +591,19 @@ def test_admin_logs_and_ratubles_history() -> None:
         assert mint.status_code == 201
         assert mint.json()["kind"] == "mint"
 
+        org_mint = client.post(
+            "/api/ratubles/mint",
+            headers={"Authorization": f"Bearer {root_token}"},
+            json={
+                "recipient_id": organization["id"],
+                "recipient_kind": "organization",
+                "amount": 900,
+                "reason": "Стартовый бюджет",
+            },
+        )
+        assert org_mint.status_code == 201
+        assert org_mint.json()["recipient_kind"] == "organization"
+
         citizen_login = client.post(
             "/api/auth/login/password",
             json={"identifier": "citizen", "password": "ratcraftia"},
@@ -277,7 +615,8 @@ def test_admin_logs_and_ratubles_history() -> None:
             "/api/ratubles/transfer",
             headers={"Authorization": f"Bearer {citizen_token}"},
             json={
-                "recipient_id": treasury["id"],
+                "recipient_id": organization["id"],
+                "recipient_kind": "organization",
                 "amount": 120,
                 "reason": "Оплата пошлины",
             },
@@ -285,6 +624,7 @@ def test_admin_logs_and_ratubles_history() -> None:
         assert transfer.status_code == 201
         assert transfer.json()["kind"] == "transfer"
         assert transfer.json()["direction"] == "outgoing"
+        assert transfer.json()["recipient_kind"] == "organization"
 
         history = client.get(
             "/api/ratubles/transactions",
@@ -298,7 +638,18 @@ def test_admin_logs_and_ratubles_history() -> None:
             headers={"Authorization": f"Bearer {root_token}"},
         )
         assert ledger.status_code == 200
-        assert len(ledger.json()) == 2
+        assert len(ledger.json()) == 3
+        assert any(item["recipient_kind"] == "organization" for item in ledger.json())
+
+        organizations = client.get(
+            "/api/admin/organizations",
+            headers={"Authorization": f"Bearer {root_token}"},
+        )
+        assert organizations.status_code == 200
+        treasury_org = next(
+            item for item in organizations.json() if item["slug"] == "treasury-office"
+        )
+        assert treasury_org["ratubles"] == 1020
 
         logs = client.get(
             "/api/admin/logs",

@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from ..core.config import get_settings
 from ..db import get_session
-from ..models import User
+from ..models import ExternalAuthApplication, User
 from ..services.permissions import normalize_permissions
 
 
@@ -45,6 +45,24 @@ def create_access_token(user: User) -> str:
         "token_type": "access",
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def create_external_access_token(
+    user: User,
+    application: ExternalAuthApplication,
+) -> tuple[str, datetime]:
+    settings = get_settings()
+    issued_at, expires_at = _token_timestamps(settings.access_token_ttl_minutes)
+    payload = {
+        "sub": user.uin,
+        "login": user.login,
+        "app_client_id": application.client_id,
+        "token_type": "external_access",
+        "iat": issued_at,
+        "exp": expires_at,
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    return token, expires_at
 
 
 def create_did_token(user: User) -> tuple[str, datetime, dict[str, str]]:
@@ -90,9 +108,19 @@ def decode_token(token: str) -> dict:
 
 
 def authenticate_with_password(session: Session, identifier: str, password: str) -> User | None:
+    normalized = identifier.strip()
     user = session.exec(
-        select(User).where(or_(User.uin == identifier, User.login == identifier))
+        select(User).where(or_(User.uin == normalized, User.login == normalized.lower()))
     ).first()
+    if not user or not verify_password(password, user.password_hash):
+        return None
+    if not user.is_active:
+        return None
+    return user
+
+
+def authenticate_with_rgov(session: Session, login: str, password: str) -> User | None:
+    user = session.exec(select(User).where(User.login == login.strip().lower())).first()
     if not user or not verify_password(password, user.password_hash):
         return None
     if not user.is_active:
@@ -105,6 +133,13 @@ def authenticate_with_uan(session: Session, uin: str, uan: str) -> User | None:
     if not user or not user.is_active:
         return None
     return user
+
+
+def authenticate_universal(session: Session, identifier: str, secret: str) -> User | None:
+    user = authenticate_with_password(session, identifier, secret)
+    if user:
+        return user
+    return authenticate_with_uan(session, identifier.strip(), secret.strip())
 
 
 def get_current_user(

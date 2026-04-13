@@ -12,6 +12,38 @@ const String apiBaseUrl = String.fromEnvironment(
 class ApiClient {
   String? token;
 
+  Future<JsonMap> login(String identifier, String secret) async {
+    final response = await _request(
+      'POST',
+      '/auth/login',
+      body: {'identifier': identifier, 'secret': secret},
+      requiresAuth: false,
+    );
+    return response as JsonMap;
+  }
+
+  Future<JsonMap> requestExternalAuthApplication({
+    required String name,
+    required String description,
+    required String homepageUrl,
+    required String contactEmail,
+    required String redirectUri,
+  }) async {
+    final response = await _request(
+      'POST',
+      '/oauth/apps/request',
+      body: {
+        'name': name,
+        'description': description,
+        'homepage_url': homepageUrl,
+        'contact_email': contactEmail,
+        'redirect_uri': redirectUri,
+      },
+      requiresAuth: false,
+    );
+    return response as JsonMap;
+  }
+
   Future<JsonMap> loginWithPassword(String identifier, String password) async {
     final response = await _request(
       'POST',
@@ -22,11 +54,11 @@ class ApiClient {
     return response as JsonMap;
   }
 
-  Future<JsonMap> loginWithUan(String uin, String uan) async {
+  Future<JsonMap> loginWithRgov(String login, String password) async {
     final response = await _request(
       'POST',
-      '/auth/login/uan',
-      body: {'uin': uin, 'uan': uan},
+      '/auth/login/rgov',
+      body: {'login': login, 'password': password},
       requiresAuth: false,
     );
     return response as JsonMap;
@@ -75,6 +107,42 @@ class ApiClient {
   Future<List<JsonMap>> getBills() async =>
       _jsonList(await _request('GET', '/parliament/bills'));
 
+  Future<JsonMap> getParliamentSummary() async =>
+      (await _request('GET', '/parliament/summary')) as JsonMap;
+
+  Future<List<JsonMap>> getParliamentElections() async =>
+      _jsonList(await _request('GET', '/parliament/elections'));
+
+  Future<void> nominateParliamentCandidate(
+    int electionId, {
+    String partyName = '',
+  }) async {
+    await _request(
+      'POST',
+      '/parliament/elections/$electionId/candidates',
+      body: {'party_name': partyName},
+    );
+  }
+
+  Future<void> signParliamentCandidate(int electionId, int candidateId) async {
+    await _request(
+      'POST',
+      '/parliament/elections/$electionId/candidates/$candidateId/sign',
+    );
+  }
+
+  Future<void> voteParliamentCandidate(
+    int electionId,
+    int candidateId,
+    String vote,
+  ) async {
+    await _request(
+      'POST',
+      '/parliament/elections/$electionId/candidates/$candidateId/vote',
+      body: {'vote': vote},
+    );
+  }
+
   Future<void> createBill({
     required String title,
     required String summary,
@@ -114,6 +182,8 @@ class ApiClient {
     required String description,
     required String proposedText,
     required String targetLevel,
+    required String matterType,
+    String? subjectIdentifier,
     int? lawId,
   }) async {
     await _request(
@@ -125,9 +195,15 @@ class ApiClient {
         'proposed_text': proposedText,
         'law_id': lawId,
         'target_level': targetLevel,
-        'closes_in_days': 7,
+        'matter_type': matterType,
+        'subject_identifier': subjectIdentifier,
+        'closes_in_days': 4,
       },
     );
+  }
+
+  Future<void> signReferendum(int referendumId) async {
+    await _request('POST', '/referenda/$referendumId/sign');
   }
 
   Future<void> voteReferendum(int referendumId, String vote) async {
@@ -147,6 +223,36 @@ class ApiClient {
       'POST',
       '/auth/change-login',
       body: {'new_login': login},
+    );
+    return response as JsonMap;
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _request(
+      'POST',
+      '/auth/change-password',
+      body: {'current_password': currentPassword, 'new_password': newPassword},
+    );
+  }
+
+  Future<List<JsonMap>> getExternalAuthApps() async =>
+      _jsonList(await _request('GET', '/admin/external-auth-apps'));
+
+  Future<JsonMap> approveExternalAuthApp(int appId) async {
+    final response = await _request(
+      'POST',
+      '/admin/external-auth-apps/$appId/approve',
+    );
+    return response as JsonMap;
+  }
+
+  Future<JsonMap> deactivateExternalAuthApp(int appId) async {
+    final response = await _request(
+      'POST',
+      '/admin/external-auth-apps/$appId/deactivate',
     );
     return response as JsonMap;
   }
@@ -266,25 +372,37 @@ class ApiClient {
 
   Future<void> transferRatubles({
     required int recipientId,
+    required String recipientKind,
     required int amount,
     required String reason,
   }) async {
     await _request(
       'POST',
       '/ratubles/transfer',
-      body: {'recipient_id': recipientId, 'amount': amount, 'reason': reason},
+      body: {
+        'recipient_id': recipientId,
+        'recipient_kind': recipientKind,
+        'amount': amount,
+        'reason': reason,
+      },
     );
   }
 
   Future<void> mintRatubles({
     required int recipientId,
+    required String recipientKind,
     required int amount,
     required String reason,
   }) async {
     await _request(
       'POST',
       '/ratubles/mint',
-      body: {'recipient_id': recipientId, 'amount': amount, 'reason': reason},
+      body: {
+        'recipient_id': recipientId,
+        'recipient_kind': recipientKind,
+        'amount': amount,
+        'reason': reason,
+      },
     );
   }
 

@@ -27,10 +27,8 @@ class _PortalScreenState extends State<PortalScreen> {
   final ApiClient _api = ApiClient();
   final PushNotificationService _pushNotifications = PushNotificationService();
 
-  final _passwordIdentifierController = TextEditingController();
-  final _passwordSecretController = TextEditingController();
-  final _uanIdentifierController = TextEditingController();
-  final _uanSecretController = TextEditingController();
+  final _loginIdentifierController = TextEditingController();
+  final _loginSecretController = TextEditingController();
   final _mailToController = TextEditingController();
   final _mailSubjectController = TextEditingController();
   final _mailTextController = TextEditingController();
@@ -42,9 +40,14 @@ class _PortalScreenState extends State<PortalScreen> {
   final _referendumDescriptionController = TextEditingController();
   final _referendumTextController = TextEditingController();
   final _referendumLawIdController = TextEditingController();
+  final _referendumSubjectController = TextEditingController();
+  final _parliamentPartyController = TextEditingController();
   final _newsTitleController = TextEditingController();
   final _newsBodyController = TextEditingController();
   final _loginChangeController = TextEditingController();
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _orgNameController = TextEditingController();
   final _orgSlugController = TextEditingController();
   final _orgDescriptionController = TextEditingController();
@@ -68,6 +71,11 @@ class _PortalScreenState extends State<PortalScreen> {
   final _transferReasonController = TextEditingController();
   final _mintAmountController = TextEditingController();
   final _mintReasonController = TextEditingController();
+  final _oauthAppNameController = TextEditingController();
+  final _oauthAppDescriptionController = TextEditingController();
+  final _oauthAppHomepageController = TextEditingController();
+  final _oauthAppContactController = TextEditingController();
+  final _oauthAppRedirectController = TextEditingController();
 
   bool _restoring = true;
   bool _loading = false;
@@ -81,18 +89,24 @@ class _PortalScreenState extends State<PortalScreen> {
   List<JsonMap> _laws = [];
   List<JsonMap> _bills = [];
   List<JsonMap> _referenda = [];
+  List<JsonMap> _parliamentElections = [];
   List<JsonMap> _users = [];
   List<JsonMap> _organizations = [];
   List<JsonMap> _directory = [];
   List<JsonMap> _transactions = [];
   List<JsonMap> _ledger = [];
   List<JsonMap> _adminLogs = [];
+  List<JsonMap> _externalAuthApps = [];
   PushNotificationStatus _pushStatus = const PushNotificationStatus.initial();
 
   String _referendumTargetLevel = 'constitution';
+  String _referendumMatterType = 'constitution_amendment';
+  JsonMap? _parliamentSummary;
   int? _selectedUserId;
-  int? _selectedTransferRecipientId;
+  String? _selectedTransferRecipientKey;
+  String? _selectedMintTargetKey;
   String? _selectedOrganizationSlug;
+  JsonMap? _createdExternalAuthApp;
 
   @override
   void initState() {
@@ -104,10 +118,8 @@ class _PortalScreenState extends State<PortalScreen> {
   @override
   void dispose() {
     final controllers = [
-      _passwordIdentifierController,
-      _passwordSecretController,
-      _uanIdentifierController,
-      _uanSecretController,
+      _loginIdentifierController,
+      _loginSecretController,
       _mailToController,
       _mailSubjectController,
       _mailTextController,
@@ -119,9 +131,14 @@ class _PortalScreenState extends State<PortalScreen> {
       _referendumDescriptionController,
       _referendumTextController,
       _referendumLawIdController,
+      _referendumSubjectController,
+      _parliamentPartyController,
       _newsTitleController,
       _newsBodyController,
       _loginChangeController,
+      _currentPasswordController,
+      _newPasswordController,
+      _confirmPasswordController,
       _orgNameController,
       _orgSlugController,
       _orgDescriptionController,
@@ -145,6 +162,11 @@ class _PortalScreenState extends State<PortalScreen> {
       _transferReasonController,
       _mintAmountController,
       _mintReasonController,
+      _oauthAppNameController,
+      _oauthAppDescriptionController,
+      _oauthAppHomepageController,
+      _oauthAppContactController,
+      _oauthAppRedirectController,
     ];
 
     for (final controller in controllers) {
@@ -254,8 +276,67 @@ class _PortalScreenState extends State<PortalScreen> {
     }
   }
 
-  bool get _canCreateBills => _hasPermission('bills.manage');
-  bool get _canCreateReferenda => _hasPermission('referenda.manage');
+  String _targetKey(String kind, Object? id) => '$kind:$id';
+
+  ({String kind, int id})? _parseTargetKey(String? key) {
+    if (key == null || key.isEmpty) {
+      return null;
+    }
+    final parts = key.split(':');
+    if (parts.length != 2) {
+      return null;
+    }
+    final id = int.tryParse(parts[1]);
+    if (id == null) {
+      return null;
+    }
+    return (kind: parts[0], id: id);
+  }
+
+  String? _resolveSelectedTransferRecipientKey(
+    List<JsonMap> directory,
+    JsonMap profile,
+  ) {
+    final currentUserId = profile['id'];
+    final recipientKeys = directory
+        .where((item) => item['kind'] != 'user' || item['id'] != currentUserId)
+        .map((item) => _targetKey(item['kind'].toString(), item['id']))
+        .toSet();
+    if (recipientKeys.contains(_selectedTransferRecipientKey)) {
+      return _selectedTransferRecipientKey;
+    }
+    for (final item in directory) {
+      if (item['kind'] == 'user' && item['id'] == currentUserId) {
+        continue;
+      }
+      return _targetKey(item['kind'].toString(), item['id']);
+    }
+    return null;
+  }
+
+  String? _resolveSelectedMintTargetKey(
+    List<JsonMap> users,
+    List<JsonMap> organizations,
+  ) {
+    final keys = <String>{
+      ...users.map((item) => _targetKey('user', item['id'])),
+      ...organizations.map((item) => _targetKey('organization', item['id'])),
+    };
+    if (keys.contains(_selectedMintTargetKey)) {
+      return _selectedMintTargetKey;
+    }
+    if (users.isNotEmpty) {
+      return _targetKey('user', users.first['id']);
+    }
+    if (organizations.isNotEmpty) {
+      return _targetKey('organization', organizations.first['id']);
+    }
+    return null;
+  }
+
+  bool get _isDeputy => _profile?['is_deputy'] as bool? ?? false;
+  bool get _canCreateBills => _isDeputy || _hasPermission('*');
+  bool get _canCreateReferenda => _profile != null;
   bool get _canPostNews => _hasPermission('news.manage');
   bool get _canCreateOrganizations =>
       _hasPermission('admin.organizations.create');
@@ -267,9 +348,14 @@ class _PortalScreenState extends State<PortalScreen> {
   bool get _canReadUsers => _hasPermission('admin.users.read');
   bool get _canReadOrganizations => _hasPermission('admin.organizations.read');
   bool get _canReadAdminLogs => _hasPermission('admin.logs.read');
+  bool get _canReadExternalApps => _hasPermission('admin.external_apps.read');
+  bool get _canApproveExternalApps =>
+      _hasPermission('admin.external_apps.approve');
   bool get _canMintRatubles => _hasPermission('ratubles.mint');
   bool get _canOpenAdmin =>
       _canReadAdminLogs ||
+      _canReadExternalApps ||
+      _canApproveExternalApps ||
       _canMintRatubles ||
       _canCreateOrganizations ||
       _canManagePersonnel ||
@@ -342,25 +428,11 @@ class _PortalScreenState extends State<PortalScreen> {
     );
   }
 
-  Future<void> _loginWithPassword() async {
+  Future<void> _login() async {
     await _runBusy(() async {
-      final response = await _api.loginWithPassword(
-        _passwordIdentifierController.text.trim(),
-        _passwordSecretController.text,
-      );
-      final token = response['access_token'].toString();
-      _api.token = token;
-      await _persistToken(token);
-      await _refreshPortal(seedProfile: response['profile'] as JsonMap);
-      _showSnack('Сессия открыта.');
-    });
-  }
-
-  Future<void> _loginWithUan() async {
-    await _runBusy(() async {
-      final response = await _api.loginWithUan(
-        _uanIdentifierController.text.trim(),
-        _uanSecretController.text.trim(),
+      final response = await _api.login(
+        _loginIdentifierController.text.trim(),
+        _loginSecretController.text,
       );
       final token = response['access_token'].toString();
       _api.token = token;
@@ -393,6 +465,8 @@ class _PortalScreenState extends State<PortalScreen> {
         _news = [];
         _laws = [];
         _bills = [];
+        _parliamentSummary = null;
+        _parliamentElections = [];
         _referenda = [];
         _users = [];
         _organizations = [];
@@ -400,9 +474,11 @@ class _PortalScreenState extends State<PortalScreen> {
         _transactions = [];
         _ledger = [];
         _adminLogs = [];
+        _externalAuthApps = [];
         _selectedSection = PortalSection.overview;
         _selectedUserId = null;
-        _selectedTransferRecipientId = null;
+        _selectedTransferRecipientKey = null;
+        _selectedMintTargetKey = null;
         _selectedOrganizationSlug = null;
         _pushStatus = const PushNotificationStatus.initial();
       });
@@ -421,6 +497,8 @@ class _PortalScreenState extends State<PortalScreen> {
       _api.getNews(),
       _api.getLaws(),
       _api.getBills(),
+      _api.getParliamentSummary(),
+      _api.getParliamentElections(),
       _api.getReferenda(),
       _api.getRatublesDirectory(),
       _api.getRatublesTransactions(),
@@ -436,22 +514,30 @@ class _PortalScreenState extends State<PortalScreen> {
       _hasPermission('admin.logs.read', profile: profile)
           ? _api.getAdminLogs()
           : Future.value(<JsonMap>[]),
+      _hasPermission('admin.external_apps.read', profile: profile)
+          ? _api.getExternalAuthApps()
+          : Future.value(<JsonMap>[]),
     ];
 
     final results = await Future.wait(futures);
-    final directory = results[7] as List<JsonMap>;
-    final transactions = results[8] as List<JsonMap>;
-    final users = results[9] as List<JsonMap>;
-    final organizations = results[10] as List<JsonMap>;
-    final ledger = results[11] as List<JsonMap>;
-    final adminLogs = results[12] as List<JsonMap>;
+    final directory = results[9] as List<JsonMap>;
+    final transactions = results[10] as List<JsonMap>;
+    final users = results[11] as List<JsonMap>;
+    final organizations = results[12] as List<JsonMap>;
+    final ledger = results[13] as List<JsonMap>;
+    final adminLogs = results[14] as List<JsonMap>;
+    final externalAuthApps = results[15] as List<JsonMap>;
     final selectedUserId = _resolveSelectedUserId(users);
     final selectedOrganizationSlug = _resolveSelectedOrganizationSlug(
       organizations,
     );
-    final selectedTransferRecipientId = _resolveSelectedTransferRecipientId(
+    final selectedTransferRecipientKey = _resolveSelectedTransferRecipientKey(
       directory,
       profile,
+    );
+    final selectedMintTargetKey = _resolveSelectedMintTargetKey(
+      users,
+      organizations,
     );
 
     if (!mounted) {
@@ -466,15 +552,19 @@ class _PortalScreenState extends State<PortalScreen> {
       _news = results[3] as List<JsonMap>;
       _laws = results[4] as List<JsonMap>;
       _bills = results[5] as List<JsonMap>;
-      _referenda = results[6] as List<JsonMap>;
+      _parliamentSummary = results[6] as JsonMap;
+      _parliamentElections = results[7] as List<JsonMap>;
+      _referenda = results[8] as List<JsonMap>;
       _directory = directory;
       _transactions = transactions;
       _users = users;
       _organizations = organizations;
       _ledger = ledger;
       _adminLogs = adminLogs;
+      _externalAuthApps = externalAuthApps;
       _selectedUserId = selectedUserId;
-      _selectedTransferRecipientId = selectedTransferRecipientId;
+      _selectedTransferRecipientKey = selectedTransferRecipientKey;
+      _selectedMintTargetKey = selectedMintTargetKey;
       _selectedOrganizationSlug = selectedOrganizationSlug;
     });
     _syncAssignedPermissionsInput(selectedUserId, users);
@@ -537,15 +627,28 @@ class _PortalScreenState extends State<PortalScreen> {
         description: _referendumDescriptionController.text.trim(),
         proposedText: _referendumTextController.text.trim(),
         targetLevel: _referendumTargetLevel,
+        matterType: _referendumMatterType,
+        subjectIdentifier: _referendumSubjectController.text.trim().isEmpty
+            ? null
+            : _referendumSubjectController.text.trim(),
         lawId: maybeInt(_referendumLawIdController.text),
       );
       _referendumTitleController.clear();
       _referendumDescriptionController.clear();
       _referendumTextController.clear();
       _referendumLawIdController.clear();
+      _referendumSubjectController.clear();
       setState(() => _referendumTargetLevel = 'constitution');
+      setState(() => _referendumMatterType = 'constitution_amendment');
       await _refreshPortal(seedProfile: _profile);
-      _showSnack('Референдум создан.');
+      _showSnack('Инициатива референдума создана.');
+    });
+  }
+
+  Future<void> _signReferendum(int referendumId) async {
+    await _runBusy(() async {
+      await _api.signReferendum(referendumId);
+      await _refreshPortal(seedProfile: _profile);
     });
   }
 
@@ -561,6 +664,41 @@ class _PortalScreenState extends State<PortalScreen> {
       await _api.publishReferendum(referendumId);
       await _refreshPortal(seedProfile: _profile);
       _showSnack('Итог референдума опубликован.');
+    });
+  }
+
+  Future<void> _nominateToParliament() async {
+    final activeElection = _parliamentSummary?['active_election'] as JsonMap?;
+    final electionId = activeElection?['id'] as int?;
+    if (electionId == null) {
+      return;
+    }
+    await _runBusy(() async {
+      await _api.nominateParliamentCandidate(
+        electionId,
+        partyName: _parliamentPartyController.text.trim(),
+      );
+      _parliamentPartyController.clear();
+      await _refreshPortal(seedProfile: _profile);
+      _showSnack('Кандидатура выдвинута.');
+    });
+  }
+
+  Future<void> _signParliamentCandidate(int electionId, int candidateId) async {
+    await _runBusy(() async {
+      await _api.signParliamentCandidate(electionId, candidateId);
+      await _refreshPortal(seedProfile: _profile);
+    });
+  }
+
+  Future<void> _voteParliamentCandidate(
+    int electionId,
+    int candidateId,
+    String vote,
+  ) async {
+    await _runBusy(() async {
+      await _api.voteParliamentCandidate(electionId, candidateId, vote);
+      await _refreshPortal(seedProfile: _profile);
     });
   }
 
@@ -593,6 +731,157 @@ class _PortalScreenState extends State<PortalScreen> {
       _loginChangeController.clear();
       await _refreshPortal(seedProfile: profile);
       _showSnack('Логин обновлён.');
+    });
+  }
+
+  Future<void> _changePassword() async {
+    final newPassword = _newPasswordController.text;
+    if (newPassword.length < 6) {
+      _showSnack(
+        'Новый пароль должен содержать минимум 6 символов.',
+        isError: true,
+      );
+      return;
+    }
+    if (newPassword != _confirmPasswordController.text) {
+      _showSnack('Подтверждение пароля не совпадает.', isError: true);
+      return;
+    }
+
+    await _runBusy(() async {
+      await _api.changePassword(
+        currentPassword: _currentPasswordController.text,
+        newPassword: newPassword,
+      );
+      _currentPasswordController.clear();
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
+      _showSnack('Пароль обновлён.');
+    });
+  }
+
+  Future<bool> _requestExternalAuthApp() async {
+    var created = false;
+    await _runBusy(() async {
+      final response = await _api.requestExternalAuthApplication(
+        name: _oauthAppNameController.text.trim(),
+        description: _oauthAppDescriptionController.text.trim(),
+        homepageUrl: _oauthAppHomepageController.text.trim(),
+        contactEmail: _oauthAppContactController.text.trim(),
+        redirectUri: _oauthAppRedirectController.text.trim(),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _createdExternalAuthApp = response);
+      for (final controller in [
+        _oauthAppNameController,
+        _oauthAppDescriptionController,
+        _oauthAppHomepageController,
+        _oauthAppContactController,
+        _oauthAppRedirectController,
+      ]) {
+        controller.clear();
+      }
+      _showSnack('OAuth-клиент создан и отправлен на одобрение.');
+      created = true;
+    });
+    return created;
+  }
+
+  Future<void> _openExternalAuthAppDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Создать OAuth-клиент'),
+          content: SizedBox(
+            width: 540,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _oauthAppNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Название приложения',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _oauthAppRedirectController,
+                    decoration: const InputDecoration(
+                      labelText: 'Redirect URI',
+                      hintText: 'https://example.com/oauth/callback',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _oauthAppHomepageController,
+                    decoration: const InputDecoration(
+                      labelText: 'Сайт приложения',
+                      hintText: 'https://example.com',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _oauthAppContactController,
+                    decoration: const InputDecoration(
+                      labelText: 'Контактный email',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _oauthAppDescriptionController,
+                    minLines: 3,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      labelText: 'Описание',
+                      hintText:
+                          'Коротко опишите, зачем приложению вход через RGOV.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _loading
+                  ? null
+                  : () => Navigator.of(dialogContext).pop(),
+              child: const Text('Закрыть'),
+            ),
+            FilledButton(
+              onPressed: _loading
+                  ? null
+                  : () async {
+                      final created = await _requestExternalAuthApp();
+                      if (created && dialogContext.mounted) {
+                        Navigator.of(dialogContext).pop();
+                      }
+                    },
+              child: const Text('Создать токены'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _approveExternalAuthApp(int appId) async {
+    await _runBusy(() async {
+      await _api.approveExternalAuthApp(appId);
+      await _refreshPortal(seedProfile: _profile);
+      _showSnack('Внешнее приложение одобрено.');
+    });
+  }
+
+  Future<void> _deactivateExternalAuthApp(int appId) async {
+    await _runBusy(() async {
+      await _api.deactivateExternalAuthApp(appId);
+      await _refreshPortal(seedProfile: _profile);
+      _showSnack('Внешнее приложение отключено.');
     });
   }
 
@@ -715,8 +1004,8 @@ class _PortalScreenState extends State<PortalScreen> {
   }
 
   Future<void> _sendRatubles() async {
-    final recipientId = _selectedTransferRecipientId;
-    if (recipientId == null) {
+    final recipient = _parseTargetKey(_selectedTransferRecipientKey);
+    if (recipient == null) {
       _showSnack('Выберите получателя.', isError: true);
       return;
     }
@@ -729,7 +1018,8 @@ class _PortalScreenState extends State<PortalScreen> {
 
     await _runBusy(() async {
       await _api.transferRatubles(
-        recipientId: recipientId,
+        recipientId: recipient.id,
+        recipientKind: recipient.kind,
         amount: amount,
         reason: _transferReasonController.text.trim(),
       );
@@ -741,9 +1031,9 @@ class _PortalScreenState extends State<PortalScreen> {
   }
 
   Future<void> _mintRatubles() async {
-    final recipientId = _selectedUserId;
-    if (recipientId == null) {
-      _showSnack('Выберите пользователя для начисления.', isError: true);
+    final recipient = _parseTargetKey(_selectedMintTargetKey);
+    if (recipient == null) {
+      _showSnack('Выберите получателя для начисления.', isError: true);
       return;
     }
 
@@ -755,7 +1045,8 @@ class _PortalScreenState extends State<PortalScreen> {
 
     await _runBusy(() async {
       await _api.mintRatubles(
-        recipientId: recipientId,
+        recipientId: recipient.id,
+        recipientKind: recipient.kind,
         amount: amount,
         reason: _mintReasonController.text.trim(),
       );
@@ -867,26 +1158,6 @@ class _PortalScreenState extends State<PortalScreen> {
     return organizations.isEmpty ? null : organizations.first['slug'] as String;
   }
 
-  int? _resolveSelectedTransferRecipientId(
-    List<JsonMap> directory,
-    JsonMap profile,
-  ) {
-    final currentUserId = profile['id'];
-    final recipientIds = directory
-        .where((item) => item['id'] != currentUserId)
-        .map((item) => item['id'])
-        .toSet();
-    if (recipientIds.contains(_selectedTransferRecipientId)) {
-      return _selectedTransferRecipientId;
-    }
-    for (final item in directory) {
-      if (item['id'] != currentUserId) {
-        return item['id'] as int;
-      }
-    }
-    return null;
-  }
-
   void _selectSection(PortalSection section, [BuildContext? context]) {
     setState(() => _selectedSection = section);
     if (context != null) {
@@ -910,12 +1181,11 @@ class _PortalScreenState extends State<PortalScreen> {
     if (_profile == null) {
       return LoginScreen(
         loading: _loading,
-        passwordIdentifierController: _passwordIdentifierController,
-        passwordSecretController: _passwordSecretController,
-        uanIdentifierController: _uanIdentifierController,
-        uanSecretController: _uanSecretController,
-        onPasswordLogin: _loginWithPassword,
-        onUanLogin: _loginWithUan,
+        identifierController: _loginIdentifierController,
+        secretController: _loginSecretController,
+        onLogin: _login,
+        onOpenTokenCreator: _openExternalAuthAppDialog,
+        createdExternalAuthApp: _createdExternalAuthApp,
         darkMode: widget.themeMode == ThemeMode.dark,
         onToggleTheme: _toggleThemeMode,
       );
@@ -1118,6 +1388,10 @@ class _PortalScreenState extends State<PortalScreen> {
         referenda: _referenda,
         loginChangeController: _loginChangeController,
         onChangeLogin: _changeLogin,
+        currentPasswordController: _currentPasswordController,
+        newPasswordController: _newPasswordController,
+        confirmPasswordController: _confirmPasswordController,
+        onChangePassword: _changePassword,
         pushStatus: _pushStatus,
         onEnablePush: _enablePushNotifications,
         onDisablePush: () => _disablePushNotifications(),
@@ -1129,12 +1403,13 @@ class _PortalScreenState extends State<PortalScreen> {
         profile: _profile,
         users: _users,
         directory: _directory,
+        organizations: _organizations,
         transactions: _transactions,
-        selectedRecipientId: _selectedTransferRecipientId,
+        selectedRecipientKey: _selectedTransferRecipientKey,
         transferAmountController: _transferAmountController,
         transferReasonController: _transferReasonController,
         onSelectedRecipientChanged: (value) {
-          setState(() => _selectedTransferRecipientId = value);
+          setState(() => _selectedTransferRecipientKey = value);
         },
         onSendTransfer: _sendRatubles,
       ),
@@ -1157,20 +1432,34 @@ class _PortalScreenState extends State<PortalScreen> {
         referendumDescriptionController: _referendumDescriptionController,
         referendumTextController: _referendumTextController,
         referendumLawIdController: _referendumLawIdController,
+        referendumSubjectController: _referendumSubjectController,
         referendumTargetLevel: _referendumTargetLevel,
+        referendumMatterType: _referendumMatterType,
         onTargetLevelChanged: (value) {
           if (value != null) {
             setState(() => _referendumTargetLevel = value);
           }
         },
+        onMatterTypeChanged: (value) {
+          if (value != null) {
+            setState(() => _referendumMatterType = value);
+          }
+        },
         onCreateReferendum: _createReferendum,
         referenda: _referenda,
+        onSignReferendum: _signReferendum,
         onVoteReferendum: _voteReferendum,
         onPublishReferendum: _publishReferendum,
       ),
       PortalSection.parliament => ParliamentPage(
         loading: _loading,
         busy: _loading,
+        parliamentSummary: _parliamentSummary,
+        parliamentElections: _parliamentElections,
+        partyController: _parliamentPartyController,
+        onNominate: _nominateToParliament,
+        onSignCandidate: _signParliamentCandidate,
+        onVoteCandidate: _voteParliamentCandidate,
         canCreateBills: _canCreateBills,
         billTitleController: _billTitleController,
         billSummaryController: _billSummaryController,
@@ -1202,11 +1491,15 @@ class _PortalScreenState extends State<PortalScreen> {
         canManagePermissions: _canManagePermissions,
         canMintRatubles: _canMintRatubles,
         canReadAdminLogs: _canReadAdminLogs,
+        canReadExternalAuthApps: _canReadExternalApps,
+        canApproveExternalAuthApps: _canApproveExternalApps,
         users: _users,
         organizations: _organizations,
         ledger: _ledger,
         adminLogs: _adminLogs,
+        externalAuthApps: _externalAuthApps,
         selectedUserId: _selectedUserId,
+        selectedMintTargetKey: _selectedMintTargetKey,
         selectedOrganizationSlug: _selectedOrganizationSlug,
         orgNameController: _orgNameController,
         orgSlugController: _orgSlugController,
@@ -1237,6 +1530,9 @@ class _PortalScreenState extends State<PortalScreen> {
         onSelectedOrganizationChanged: (value) {
           setState(() => _selectedOrganizationSlug = value);
         },
+        onSelectedMintTargetChanged: (value) {
+          setState(() => _selectedMintTargetKey = value);
+        },
         onCreateOrganization: _createOrganization,
         onHireSelectedUser: _hireSelectedUser,
         onFireSelectedUser: _fireSelectedUser,
@@ -1244,6 +1540,8 @@ class _PortalScreenState extends State<PortalScreen> {
         onCreateUser: _createUser,
         onUpdateSelectedUser: _updateSelectedUser,
         onMintRatubles: _mintRatubles,
+        onApproveExternalAuthApp: _approveExternalAuthApp,
+        onDeactivateExternalAuthApp: _deactivateExternalAuthApp,
       ),
     };
   }
