@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: rgov-backend
+    environment:
+      RGOV_DATABASE_URL: sqlite:////app/data/rgov.db
+      RGOV_SECRET_KEY: ratcraftia-compose-secret
+      RGOV_CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:8800,http://127.0.0.1:8800
+      RGOV_LOCAL_TIMEZONE: Europe/Moscow
+    volumes:
+      - rgov_data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_BASE_URL: /api
+    container_name: rgov-frontend
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: rgov-caddy
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "8800:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  rgov_data:
