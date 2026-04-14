@@ -1,7 +1,6 @@
-import "@fontsource/manrope/400.css";
-import "@fontsource/manrope/500.css";
-import "@fontsource/manrope/700.css";
-import "@fontsource/source-serif-4/600.css";
+import "@fontsource/roboto/400.css";
+import "@fontsource/roboto/500.css";
+import "@fontsource/roboto/700.css";
 import { alpha, createTheme } from "@mui/material/styles";
 
 export function createAppTheme(mode: "light" | "dark") {
@@ -9,99 +8,110 @@ export function createAppTheme(mode: "light" | "dark") {
   const palette = {
     mode,
     primary: {
-      main: light ? "#0f766e" : "#6ee7d8",
-      dark: light ? "#0b5a54" : "#45c9ba",
-      light: light ? "#4cc0b4" : "#9ff4e9",
-      contrastText: light ? "#f5fbfa" : "#052826",
+      main: light ? "#006a67" : "#4fdad3",
+      dark: light ? "#004f4c" : "#1abeb7",
+      light: light ? "#3f8f8b" : "#8ef2ec",
+      contrastText: light ? "#ffffff" : "#00201e",
     },
     secondary: {
-      main: light ? "#c2410c" : "#ffb089",
-      dark: light ? "#9b2f07" : "#ff9966",
-      light: light ? "#ef7f52" : "#ffd0b7",
-      contrastText: light ? "#fff7f2" : "#3f1803",
+      main: light ? "#4b635f" : "#b2ccc7",
+      dark: light ? "#334946" : "#96b1ac",
+      light: light ? "#748a86" : "#d0ebe6",
+      contrastText: light ? "#ffffff" : "#1d352f",
     },
     background: {
-      default: light ? "#f6f3eb" : "#11161b",
-      paper: light ? "#fffdf8" : "#182029",
+      default: light ? "#f4fbf8" : "#0f1514",
+      paper: light ? "#fbfefd" : "#161d1c",
     },
     success: {
-      main: light ? "#2f855a" : "#80e4a6",
+      main: light ? "#426834" : "#a7d395",
     },
     warning: {
-      main: light ? "#b7791f" : "#f8c96b",
+      main: light ? "#7c5800" : "#f0c86d",
     },
     error: {
-      main: light ? "#c53030" : "#ff9b9b",
+      main: light ? "#ba1a1a" : "#ffb4ab",
     },
     text: {
-      primary: light ? "#1c2526" : "#f5f7fb",
-      secondary: light ? "#5c6a6b" : "#b8c3d1",
+      primary: light ? "#161d1c" : "#dce5e2",
+      secondary: light ? "#3f4947" : "#bec9c6",
     },
-    divider: light ? "rgba(17, 24, 39, 0.08)" : "rgba(235, 241, 255, 0.1)",
+    divider: light ? "rgba(22, 29, 28, 0.12)" : "rgba(220, 229, 226, 0.12)",
   } as const;
 
   return createTheme({
     palette,
     shape: {
-      borderRadius: 20,
+      borderRadius: 16,
     },
     typography: {
-      fontFamily: '"Manrope", "Segoe UI", sans-serif',
+      fontFamily: '"Roboto", "Arial", sans-serif',
       h1: {
-        fontFamily: '"Source Serif 4", Georgia, serif',
-        fontWeight: 600,
+        fontWeight: 400,
+        letterSpacing: "-0.015em",
       },
       h2: {
-        fontFamily: '"Source Serif 4", Georgia, serif',
-        fontWeight: 600,
+        fontWeight: 400,
+        letterSpacing: "-0.01em",
       },
       h3: {
-        fontFamily: '"Source Serif 4", Georgia, serif',
-        fontWeight: 600,
+        fontWeight: 400,
       },
       h4: {
-        fontFamily: '"Source Serif 4", Georgia, serif',
-        fontWeight: 600,
+        fontWeight: 500,
       },
       h5: {
-        fontFamily: '"Source Serif 4", Georgia, serif',
-        fontWeight: 600,
+        fontWeight: 500,
       },
       h6: {
-        fontFamily: '"Source Serif 4", Georgia, serif',
-        fontWeight: 600,
+        fontWeight: 500,
       },
       button: {
         textTransform: "none",
-        fontWeight: 700,
+        fontWeight: 500,
+        letterSpacing: "0.01em",
       },
     },
     components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            backgroundColor: palette.background.default,
+            color: palette.text.primary,
+          },
+        },
+      },
       MuiAppBar: {
         styleOverrides: {
           root: {
             backgroundImage: "none",
+            backgroundColor: alpha(palette.background.paper, 0.92),
             borderBottom: `1px solid ${palette.divider}`,
+            color: palette.text.primary,
+            boxShadow: "none",
           },
         },
       },
       MuiCard: {
         styleOverrides: {
           root: {
+            borderRadius: 28,
+            backgroundColor: alpha(palette.background.paper, 0.98),
             border: `1px solid ${palette.divider}`,
             boxShadow: light
-              ? "0 20px 50px rgba(15, 23, 42, 0.08)"
-              : "0 18px 40px rgba(4, 10, 17, 0.35)",
+              ? "0 1px 2px rgba(22, 29, 28, 0.08), 0 8px 24px rgba(22, 29, 28, 0.06)"
+              : "0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 24px rgba(0, 0, 0, 0.18)",
           },
         },
       },
       MuiPaper: {
         styleOverrides: {
           rounded: {
-            borderRadius: 20,
+            borderRadius: 24,
           },
           root: {
             backgroundImage: "none",
+            backgroundColor: palette.background.paper,
           },
         },
       },
@@ -109,9 +119,7 @@ export function createAppTheme(mode: "light" | "dark") {
         styleOverrides: {
           paper: {
             borderRight: `1px solid ${palette.divider}`,
-            backgroundImage: light
-              ? "linear-gradient(180deg, rgba(15,118,110,0.08), rgba(255,253,248,0.9))"
-              : "linear-gradient(180deg, rgba(110,231,216,0.12), rgba(24,32,41,0.96))",
+            backgroundColor: alpha(palette.background.paper, 0.98),
           },
         },
       },
@@ -121,15 +129,31 @@ export function createAppTheme(mode: "light" | "dark") {
         },
         styleOverrides: {
           root: {
-            borderRadius: 14,
-            paddingInline: 18,
+            borderRadius: 999,
+            minHeight: 40,
+            paddingInline: 24,
+            paddingBlock: 10,
+          },
+          contained: {
+            boxShadow: "none",
+          },
+          outlined: {
+            borderWidth: 1,
+          },
+        },
+      },
+      MuiIconButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: 16,
           },
         },
       },
       MuiChip: {
         styleOverrides: {
           root: {
-            borderRadius: 999,
+            borderRadius: 8,
+            fontWeight: 500,
           },
         },
       },
@@ -142,16 +166,47 @@ export function createAppTheme(mode: "light" | "dark") {
       MuiOutlinedInput: {
         styleOverrides: {
           root: {
-            backgroundColor: light
-              ? alpha("#ffffff", 0.82)
-              : alpha("#0f172a", 0.55),
+            borderRadius: 16,
+            backgroundColor: alpha(palette.primary.main, light ? 0.03 : 0.08),
+          },
+        },
+      },
+      MuiCardHeader: {
+        styleOverrides: {
+          root: {
+            padding: "20px 24px 12px",
+          },
+          action: {
+            marginTop: 0,
+            marginRight: 0,
+          },
+        },
+      },
+      MuiTabs: {
+        styleOverrides: {
+          indicator: {
+            height: 3,
+            borderRadius: 3,
+          },
+        },
+      },
+      MuiAccordion: {
+        styleOverrides: {
+          root: {
+            borderRadius: 24,
+            border: `1px solid ${palette.divider}`,
+            overflow: "hidden",
+            "&:before": {
+              display: "none",
+            },
           },
         },
       },
       MuiListItemButton: {
         styleOverrides: {
           root: {
-            borderRadius: 16,
+            borderRadius: 999,
+            minHeight: 52,
           },
         },
       },

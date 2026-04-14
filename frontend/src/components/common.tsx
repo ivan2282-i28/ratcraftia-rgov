@@ -23,10 +23,8 @@ export function HeroCard(props: {
   return (
     <Card
       sx={{
-        backgroundImage: `linear-gradient(135deg, ${alpha(
-          theme.palette.primary.main,
-          0.2,
-        )}, ${alpha(theme.palette.secondary.main, 0.18)})`,
+        bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === "light" ? 0.08 : 0.14),
+        borderColor: alpha(theme.palette.primary.main, 0.18),
       }}
     >
       <CardContent sx={{ p: { xs: 3, md: 4 } }}>
@@ -127,7 +125,8 @@ export function MetricCard(props: {
             sx={{
               width: 52,
               height: 52,
-              bgcolor: alpha(accentColor, 0.14),
+              borderRadius: 4,
+              bgcolor: alpha(accentColor, 0.12),
               color: accentColor,
             }}
           >
@@ -149,7 +148,7 @@ export function FeatureCard(props: {
       variant="outlined"
       sx={{
         p: 2,
-        borderRadius: 4,
+        borderRadius: 5,
         bgcolor: "background.paper",
       }}
     >
@@ -201,7 +200,7 @@ export function EmptyState(props: { text: string }) {
       variant="outlined"
       sx={{
         p: 3,
-        borderRadius: 4,
+        borderRadius: 5,
         textAlign: "center",
       }}
     >

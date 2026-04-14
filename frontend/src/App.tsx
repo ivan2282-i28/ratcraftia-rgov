@@ -693,13 +693,10 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
       <Box
         sx={{
           minHeight: "100vh",
-          backgroundImage: `radial-gradient(circle at top left, ${alpha(
+          backgroundImage: `linear-gradient(180deg, ${theme.palette.background.default}, ${alpha(
             theme.palette.primary.main,
-            0.18,
-          )}, transparent 30%), radial-gradient(circle at top right, ${alpha(
-            theme.palette.secondary.main,
-            0.18,
-          )}, transparent 26%)`,
+            theme.palette.mode === "light" ? 0.04 : 0.08,
+          )})`,
           backgroundColor: theme.palette.background.default,
         }}
       >
@@ -1157,6 +1154,8 @@ function NavigationDrawer(props: {
   section: PortalSection;
   onSelect: (nextSection: PortalSection) => void;
 }) {
+  const theme = useTheme();
+
   const content = (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Box sx={{ px: 3, py: 3 }}>
@@ -1187,10 +1186,13 @@ function NavigationDrawer(props: {
       <Box sx={{ mt: "auto", p: 2 }}>
         <Card
           sx={{
-            backgroundImage: `linear-gradient(135deg, ${alpha("#0f766e", 0.18)}, ${alpha(
-              "#c2410c",
-              0.22,
-            )})`,
+            bgcolor: alpha(
+              props.profile.permissions.includes("*")
+                ? "#006a67"
+                : "#4b635f",
+              0.1,
+            ),
+            borderColor: alpha(theme.palette.primary.main, 0.16),
           }}
         >
           <CardContent>
