@@ -67,36 +67,6 @@ class AdminLog(Timestamped, table=True):
     target_label: str = Field(default="", nullable=False)
 
 
-class ExternalAuthApplication(Timestamped, table=True):
-    __tablename__ = "external_auth_application"
-
-    id: int | None = Field(default=None, primary_key=True)
-    name: str
-    description: str = Field(default="")
-    homepage_url: str = Field(default="")
-    contact_email: str = Field(default="")
-    redirect_uri: str = Field(default="")
-    client_id: str = Field(index=True, unique=True)
-    client_secret_hash: str
-    is_approved: bool = Field(default=False, nullable=False)
-    approved_at: datetime | None = Field(default=None)
-    approved_by_id: int | None = Field(default=None, foreign_key="user.id", index=True)
-    is_active: bool = Field(default=False, nullable=False)
-    last_token_issued_at: datetime | None = Field(default=None)
-
-
-class OAuthAuthorizationCode(Timestamped, table=True):
-    __tablename__ = "oauth_authorization_code"
-
-    id: int | None = Field(default=None, primary_key=True)
-    application_id: int = Field(foreign_key="external_auth_application.id", index=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-    code_hash: str = Field(index=True, unique=True)
-    redirect_uri: str
-    expires_at: datetime
-    used_at: datetime | None = Field(default=None)
-
-
 class PushSubscription(Timestamped, table=True):
     __tablename__ = "push_subscription"
 

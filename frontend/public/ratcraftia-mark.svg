@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120">
+  <rect width="320" height="120" rx="28" fill="#fffdf8"/>
+  <path d="M18 24h118v22H18z" fill="#0f766e"/>
+  <path d="M18 49h118v22H18z" fill="#f1b24a"/>
+  <path d="M18 74h118v22H18z" fill="#d66f4d"/>
+  <circle cx="205" cy="60" r="28" fill="#fffdf8" stroke="#1c2526" stroke-width="8"/>
+  <path d="M191 61l10 10 20-25" fill="none" stroke="#0f766e" stroke-linecap="round" stroke-linejoin="round" stroke-width="9"/>
+  <text x="243" y="69" fill="#1c2526" font-family="Source Serif 4, serif" font-size="34" font-weight="600">RGOV</text>
+</svg>

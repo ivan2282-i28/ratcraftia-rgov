@@ -15,8 +15,6 @@ ORGS_READ_PERMISSION = "admin.organizations.read"
 ORGS_CREATE_PERMISSION = "admin.organizations.create"
 PERSONNEL_MANAGE_PERMISSION = "admin.personnel.manage"
 ADMIN_LOGS_READ_PERMISSION = "admin.logs.read"
-EXTERNAL_APPS_READ_PERMISSION = "admin.external_apps.read"
-EXTERNAL_APPS_APPROVE_PERMISSION = "admin.external_apps.approve"
 NEWS_MANAGE_PERMISSION = "news.manage"
 BILLS_MANAGE_PERMISSION = "bills.manage"
 REFERENDA_MANAGE_PERMISSION = "referenda.manage"
@@ -41,8 +39,6 @@ PRESET_PERMISSIONS = {
     ],
     "admin": [
         ADMIN_LOGS_READ_PERMISSION,
-        EXTERNAL_APPS_APPROVE_PERMISSION,
-        EXTERNAL_APPS_READ_PERMISSION,
         BILLS_MANAGE_PERMISSION,
         NEWS_MANAGE_PERMISSION,
         ORGS_CREATE_PERMISSION,
@@ -75,8 +71,6 @@ PERMISSION_LABELS = {
     ORGS_CREATE_PERMISSION: "Создание организаций",
     PERSONNEL_MANAGE_PERMISSION: "Кадровые операции",
     ADMIN_LOGS_READ_PERMISSION: "Просмотр журналов администратора",
-    EXTERNAL_APPS_READ_PERMISSION: "Просмотр внешних приложений",
-    EXTERNAL_APPS_APPROVE_PERMISSION: "Одобрение внешних приложений",
     NEWS_MANAGE_PERMISSION: "Управление новостями",
     BILLS_MANAGE_PERMISSION: "Парламентские операции",
     REFERENDA_MANAGE_PERMISSION: "Референдумы",

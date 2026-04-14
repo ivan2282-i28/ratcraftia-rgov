@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 
 from ..core.config import get_settings
 from ..db import get_session
-from ..models import ExternalAuthApplication, User
+from ..models import User
 from ..services.permissions import normalize_permissions
 
 
@@ -45,24 +45,6 @@ def create_access_token(user: User) -> str:
         "token_type": "access",
     }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
-
-
-def create_external_access_token(
-    user: User,
-    application: ExternalAuthApplication,
-) -> tuple[str, datetime]:
-    settings = get_settings()
-    issued_at, expires_at = _token_timestamps(settings.access_token_ttl_minutes)
-    payload = {
-        "sub": user.uin,
-        "login": user.login,
-        "app_client_id": application.client_id,
-        "token_type": "external_access",
-        "iat": issued_at,
-        "exp": expires_at,
-    }
-    token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
-    return token, expires_at
 
 
 def create_did_token(user: User) -> tuple[str, datetime, dict[str, str]]:

@@ -115,20 +115,6 @@ def _create_admin_log_table(connection: Connection) -> None:
     )
 
 
-def _add_external_auth_redirect_uri(connection: Connection) -> None:
-    inspector = inspect(connection)
-    if "external_auth_application" not in inspector.get_table_names():
-        return
-    columns = {column["name"] for column in inspector.get_columns("external_auth_application")}
-    if "redirect_uri" in columns:
-        return
-    connection.execute(
-        text(
-            'ALTER TABLE external_auth_application ADD COLUMN redirect_uri VARCHAR NOT NULL DEFAULT ""'
-        )
-    )
-
-
 def _add_org_ratubles(connection: Connection) -> None:
     inspector = inspect(connection)
     if "organization" not in inspector.get_table_names():
@@ -383,11 +369,6 @@ MIGRATIONS: tuple[Migration, ...] = (
         revision="20260412_004_create_admin_log_table",
         description="Create admin audit log table",
         upgrade=_create_admin_log_table,
-    ),
-    Migration(
-        revision="20260413_001_add_external_auth_redirect_uri",
-        description="Add redirect URI to external auth applications",
-        upgrade=_add_external_auth_redirect_uri,
     ),
     Migration(
         revision="20260414_001_add_org_ratubles",

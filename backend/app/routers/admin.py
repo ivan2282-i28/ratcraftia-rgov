@@ -8,7 +8,6 @@ from ..db import get_session
 from ..models import Organization, User
 from ..schemas import (
     AdminLogRead,
-    ExternalAuthApplicationRead,
     HireRequest,
     OrganizationCreate,
     OrganizationRead,
@@ -19,18 +18,11 @@ from ..schemas import (
 )
 from ..services.permissions import (
     ADMIN_LOGS_READ_PERMISSION,
-    EXTERNAL_APPS_READ_PERMISSION,
     ORGS_CREATE_PERMISSION,
     ORGS_READ_PERMISSION,
     USERS_CREATE_PERMISSION,
     USERS_READ_PERMISSION,
     has_permission,
-)
-from ..services.external_auth import (
-    approve_external_auth_application,
-    deactivate_external_auth_application,
-    get_external_auth_application_or_404,
-    list_external_auth_applications,
 )
 from ..services.portal import (
     change_user_permissions,
@@ -194,48 +186,3 @@ def get_admin_logs(
             detail="Недостаточно прав для просмотра журналов.",
         )
     return list_admin_logs(session, user)
-
-
-@router.get("/external-auth-apps", response_model=list[ExternalAuthApplicationRead])
-def get_external_auth_apps(
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-) -> list[ExternalAuthApplicationRead]:
-    if not has_permission(user, EXTERNAL_APPS_READ_PERMISSION):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав для просмотра внешних приложений.",
-        )
-    return list_external_auth_applications(session)
-
-
-@router.post("/external-auth-apps/{app_id}/approve", response_model=ExternalAuthApplicationRead)
-def approve_external_auth_app(
-    app_id: int,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-) -> ExternalAuthApplicationRead:
-    try:
-        return approve_external_auth_application(
-            session,
-            user,
-            get_external_auth_application_or_404(session, app_id),
-        )
-    except PermissionError as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
-
-
-@router.post("/external-auth-apps/{app_id}/deactivate", response_model=ExternalAuthApplicationRead)
-def deactivate_external_auth_app(
-    app_id: int,
-    user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-) -> ExternalAuthApplicationRead:
-    try:
-        return deactivate_external_auth_application(
-            session,
-            user,
-            get_external_auth_application_or_404(session, app_id),
-        )
-    except PermissionError as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error

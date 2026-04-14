@@ -1,14 +1,16 @@
-FROM ghcr.io/cirruslabs/flutter:3.41.6 AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
-COPY pubspec.yaml pubspec.lock ./
-RUN flutter pub get
+COPY package.json package-lock.json* ./
+RUN npm install
 COPY . .
 
-ARG API_BASE_URL=http://localhost:8000/api
-RUN flutter build web --release --dart-define=API_BASE_URL=${API_BASE_URL}
+ARG API_BASE_URL=/api
+ENV VITE_API_BASE_URL=${API_BASE_URL}
+
+RUN npm run build
 
 FROM nginx:1.29-alpine
-COPY --from=build /app/build/web /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

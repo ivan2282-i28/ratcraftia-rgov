@@ -2,7 +2,7 @@
 
 RGOV — Ratcraftia Government Web Portal. Проект собран как монорепозиторий:
 
-- `frontend` — Flutter Web интерфейс на русском языке
+- `frontend` — React + Material UI интерфейс на русском языке
 - `backend` — FastAPI + Uvicorn backend с JWT, GovMail, законами, референдумами, парламентом, новостями и DID
 - `RCS` — Ratcraftia Control Script для административных и законодательных операций
 
@@ -13,10 +13,6 @@ RGOV — Ratcraftia Government Web Portal. Проект собран как мо
 - Профиль доступа:
   - смена логина
   - смена пароля
-- Внешняя авторизация для сторонних сервисов:
-  - запрос приложения через API
-  - OAuth 2.0 authorization code flow с browser redirect и consent
-  - выпуск OAuth-токенов только после одобрения приложения администратором
 - GovMail:
   - `UIN@citizen`
   - `Initials.Organization@gov`
@@ -72,8 +68,8 @@ Frontend:
 
 ```bash
 cd frontend
-flutter pub get
-flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000/api
+npm install
+npm run dev
 ```
 
 ## Стартовая учётная запись
@@ -123,11 +119,3 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:8000/api
 - Старые поля ролей автоматически мигрируются в `permissions` при запуске backend.
 - УАН в списках пользователей маскируется, но остаётся доступен владельцу в профиле и DID.
 - Смена логина ограничена одним разом в сутки по часовому поясу `Europe/Moscow`.
-- Внешняя авторизация:
-  - `POST /api/oauth/apps/request` — регистрация внешнего приложения с `redirect_uri`
-  - `GET /api/oauth/apps/{client_id}/status` — проверка статуса одобрения
-  - `GET /api/oauth/authorize` — browser redirect/consent страница
-  - `POST /api/oauth/token` — обмен authorization code на access token
-  - `GET /api/oauth/me` — минимальный профиль по внешнему токену
-  - в web UI есть публичная форма для создания `client_id` и `client_secret`
-  - одобрение и отключение выполняются через раздел управления или admin API

@@ -45,46 +45,6 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
-class ExternalAuthApplicationRequest(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
-    description: str = Field(default="", max_length=500)
-    homepage_url: str = Field(default="", max_length=240)
-    contact_email: str = Field(default="", max_length=160)
-    redirect_uri: str = Field(min_length=8, max_length=500)
-
-
-class ExternalAuthApplicationRead(BaseModel):
-    id: int
-    name: str
-    description: str
-    homepage_url: str
-    contact_email: str
-    redirect_uri: str
-    client_id: str
-    is_approved: bool
-    approved_at: datetime | None = None
-    approved_by_name: str | None = None
-    is_active: bool
-    last_token_issued_at: datetime | None = None
-
-
-class ExternalAuthApplicationSecretResponse(BaseModel):
-    application: ExternalAuthApplicationRead
-    client_secret: str
-
-
-class ExternalAuthApplicationStatusResponse(BaseModel):
-    client_id: str
-    is_approved: bool
-    is_active: bool
-
-
-class OAuthTokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
-
-
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2)
     slug: str = Field(min_length=2)
@@ -126,18 +86,6 @@ class UserRead(BaseModel):
 
 class ProfileResponse(UserRead):
     pass
-
-
-class ExternalAuthProfileResponse(BaseModel):
-    id: int
-    uin: str
-    login: str
-    first_name: str
-    last_name: str
-    patronymic: str
-    full_name: str
-    organization: OrganizationRead | None = None
-    photo_url: str | None = None
 
 
 class DidTokenResponse(BaseModel):

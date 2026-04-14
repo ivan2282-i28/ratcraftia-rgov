@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from .core.config import get_settings
 from .db import get_engine, init_db
-from .routers import admin, auth, did, external_auth, laws, mail, news, notifications, parliament, ratubles, referenda
+from .routers import admin, auth, did, laws, mail, news, notifications, parliament, ratubles, referenda
 from .services.bootstrap import seed_demo_data
 
 
@@ -43,7 +43,6 @@ def healthcheck() -> dict[str, str]:
 
 
 app.include_router(auth.router)
-app.include_router(external_auth.router)
 app.include_router(did.router)
 app.include_router(mail.router)
 app.include_router(news.router)
