@@ -67,6 +67,47 @@ class AdminLog(Timestamped, table=True):
     target_label: str = Field(default="", nullable=False)
 
 
+class OAuthApplication(Timestamped, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    owner_user_id: int = Field(foreign_key="user.id", index=True)
+    name: str
+    slug: str = Field(index=True, unique=True)
+    description: str = Field(default="")
+    website_url: str = Field(default="")
+    redirect_uris_json: str = Field(default="[]", nullable=False)
+    allowed_scopes: str = Field(default="profile.basic", nullable=False)
+    client_id: str = Field(index=True, unique=True)
+    client_secret_hash: str
+    status: str = Field(default="pending", index=True)
+    review_note: str = Field(default="", nullable=False)
+    approved_by_user_id: int | None = Field(default=None, foreign_key="user.id", index=True)
+    approved_at: datetime | None = Field(default=None)
+    last_secret_rotated_at: datetime | None = Field(default=None)
+
+
+class OAuthAuthorizationCode(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="oauthapplication.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    code: str = Field(index=True, unique=True)
+    redirect_uri: str
+    scopes: str = Field(default="profile.basic", nullable=False)
+    expires_at: datetime = Field(nullable=False)
+    used_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
+class OAuthAccessToken(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="oauthapplication.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    token_id: str = Field(index=True, unique=True)
+    scopes: str = Field(default="profile.basic", nullable=False)
+    expires_at: datetime = Field(nullable=False)
+    revoked_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=utc_now, nullable=False)
+
+
 class PushSubscription(Timestamped, table=True):
     __tablename__ = "push_subscription"
 

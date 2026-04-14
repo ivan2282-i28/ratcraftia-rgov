@@ -6,6 +6,19 @@ from typing import Callable
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection, Engine
 
+from .models import (
+    AdminLog,
+    DeputyMandate,
+    OAuthAccessToken,
+    OAuthApplication,
+    OAuthAuthorizationCode,
+    ParliamentCandidate,
+    ParliamentCandidateSignature,
+    ParliamentElection,
+    ParliamentElectionVote,
+    RatublesTransaction,
+    ReferendumSignature,
+)
 from .services.permissions import permissions_from_legacy_role, serialize_permissions
 
 
@@ -23,7 +36,7 @@ def _ensure_schema_migrations_table(connection: Connection) -> None:
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 revision VARCHAR(64) PRIMARY KEY,
                 description VARCHAR(255) NOT NULL,
-                applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
@@ -71,48 +84,11 @@ def _add_user_permissions(connection: Connection) -> None:
 
 
 def _create_ratubles_transaction_table(connection: Connection) -> None:
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS ratublestransaction (
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                id INTEGER NOT NULL PRIMARY KEY,
-                kind VARCHAR NOT NULL,
-                amount INTEGER NOT NULL,
-                reason VARCHAR NOT NULL DEFAULT '',
-                sender_id INTEGER,
-                recipient_id INTEGER NOT NULL,
-                actor_id INTEGER NOT NULL,
-                FOREIGN KEY(sender_id) REFERENCES user (id),
-                FOREIGN KEY(recipient_id) REFERENCES user (id),
-                FOREIGN KEY(actor_id) REFERENCES user (id)
-            )
-            """
-        )
-    )
+    RatublesTransaction.__table__.create(connection, checkfirst=True)
 
 
 def _create_admin_log_table(connection: Connection) -> None:
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS adminlog (
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                id INTEGER NOT NULL PRIMARY KEY,
-                actor_id INTEGER NOT NULL,
-                action VARCHAR NOT NULL,
-                summary VARCHAR NOT NULL,
-                reason VARCHAR NOT NULL DEFAULT '',
-                target_user_id INTEGER,
-                target_label VARCHAR NOT NULL DEFAULT '',
-                FOREIGN KEY(actor_id) REFERENCES user (id),
-                FOREIGN KEY(target_user_id) REFERENCES user (id)
-            )
-            """
-        )
-    )
+    AdminLog.__table__.create(connection, checkfirst=True)
 
 
 def _add_org_ratubles(connection: Connection) -> None:
@@ -135,6 +111,20 @@ def _upgrade_ratubles_transaction_targets(connection: Connection) -> None:
     if "recipient_org_id" in columns:
         return
 
+    if connection.dialect.name != "sqlite":
+        connection.execute(
+            text(
+                """
+                ALTER TABLE ratublestransaction
+                ADD COLUMN recipient_org_id INTEGER REFERENCES organization (id)
+                """
+            )
+        )
+        connection.execute(
+            text("ALTER TABLE ratublestransaction ALTER COLUMN recipient_id DROP NOT NULL")
+        )
+        return
+
     connection.execute(text("PRAGMA foreign_keys=OFF"))
     connection.execute(
         text(
@@ -150,10 +140,10 @@ def _upgrade_ratubles_transaction_targets(connection: Connection) -> None:
                 recipient_id INTEGER,
                 recipient_org_id INTEGER,
                 actor_id INTEGER NOT NULL,
-                FOREIGN KEY(sender_id) REFERENCES user (id),
-                FOREIGN KEY(recipient_id) REFERENCES user (id),
+                FOREIGN KEY(sender_id) REFERENCES "user" (id),
+                FOREIGN KEY(recipient_id) REFERENCES "user" (id),
                 FOREIGN KEY(recipient_org_id) REFERENCES organization (id),
-                FOREIGN KEY(actor_id) REFERENCES user (id)
+                FOREIGN KEY(actor_id) REFERENCES "user" (id)
             )
             """
         )
@@ -241,112 +231,18 @@ def _upgrade_referendum_constitutional_rules(connection: Connection) -> None:
 
 
 def _create_governance_tables(connection: Connection) -> None:
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS parliamentelection (
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                id INTEGER NOT NULL PRIMARY KEY,
-                title VARCHAR NOT NULL,
-                kind VARCHAR NOT NULL DEFAULT 'general',
-                status VARCHAR NOT NULL DEFAULT 'open',
-                seat_count INTEGER NOT NULL DEFAULT 20,
-                created_by_id INTEGER,
-                opens_at DATETIME NOT NULL,
-                closes_at DATETIME NOT NULL,
-                FOREIGN KEY(created_by_id) REFERENCES user (id)
-            )
-            """
-        )
-    )
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS deputymandate (
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                id INTEGER NOT NULL PRIMARY KEY,
-                seat_number INTEGER NOT NULL,
-                deputy_id INTEGER NOT NULL,
-                election_id INTEGER,
-                status VARCHAR NOT NULL DEFAULT 'active',
-                starts_at DATETIME NOT NULL,
-                ends_at DATETIME NOT NULL,
-                ended_at DATETIME,
-                ended_reason VARCHAR NOT NULL DEFAULT '',
-                FOREIGN KEY(deputy_id) REFERENCES user (id),
-                FOREIGN KEY(election_id) REFERENCES parliamentelection (id)
-            )
-            """
-        )
-    )
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS parliamentcandidate (
-                created_at DATETIME NOT NULL,
-                updated_at DATETIME NOT NULL,
-                id INTEGER NOT NULL PRIMARY KEY,
-                election_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                party_name VARCHAR NOT NULL DEFAULT '',
-                status VARCHAR NOT NULL DEFAULT 'collecting_signatures',
-                required_signatures INTEGER NOT NULL DEFAULT 1,
-                FOREIGN KEY(election_id) REFERENCES parliamentelection (id),
-                FOREIGN KEY(user_id) REFERENCES user (id),
-                CONSTRAINT uq_parliament_candidate_user UNIQUE (election_id, user_id)
-            )
-            """
-        )
-    )
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS parliamentcandidatesignature (
-                id INTEGER NOT NULL PRIMARY KEY,
-                candidate_id INTEGER NOT NULL,
-                signer_id INTEGER NOT NULL,
-                created_at DATETIME NOT NULL,
-                FOREIGN KEY(candidate_id) REFERENCES parliamentcandidate (id),
-                FOREIGN KEY(signer_id) REFERENCES user (id),
-                CONSTRAINT uq_parliament_candidate_signature UNIQUE (candidate_id, signer_id)
-            )
-            """
-        )
-    )
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS parliamentelectionvote (
-                id INTEGER NOT NULL PRIMARY KEY,
-                election_id INTEGER NOT NULL,
-                voter_id INTEGER NOT NULL,
-                candidate_id INTEGER NOT NULL,
-                created_at DATETIME NOT NULL,
-                FOREIGN KEY(election_id) REFERENCES parliamentelection (id),
-                FOREIGN KEY(voter_id) REFERENCES user (id),
-                FOREIGN KEY(candidate_id) REFERENCES parliamentcandidate (id),
-                CONSTRAINT uq_parliament_election_vote UNIQUE (election_id, voter_id, candidate_id)
-            )
-            """
-        )
-    )
-    connection.execute(
-        text(
-            """
-            CREATE TABLE IF NOT EXISTS referendumsignature (
-                id INTEGER NOT NULL PRIMARY KEY,
-                referendum_id INTEGER NOT NULL,
-                signer_id INTEGER NOT NULL,
-                created_at DATETIME NOT NULL,
-                FOREIGN KEY(referendum_id) REFERENCES referendum (id),
-                FOREIGN KEY(signer_id) REFERENCES user (id),
-                CONSTRAINT uq_referendum_signature UNIQUE (referendum_id, signer_id)
-            )
-            """
-        )
-    )
+    ParliamentElection.__table__.create(connection, checkfirst=True)
+    DeputyMandate.__table__.create(connection, checkfirst=True)
+    ParliamentCandidate.__table__.create(connection, checkfirst=True)
+    ParliamentCandidateSignature.__table__.create(connection, checkfirst=True)
+    ParliamentElectionVote.__table__.create(connection, checkfirst=True)
+    ReferendumSignature.__table__.create(connection, checkfirst=True)
+
+
+def _create_oauth_tables(connection: Connection) -> None:
+    OAuthApplication.__table__.create(connection, checkfirst=True)
+    OAuthAuthorizationCode.__table__.create(connection, checkfirst=True)
+    OAuthAccessToken.__table__.create(connection, checkfirst=True)
 
 
 MIGRATIONS: tuple[Migration, ...] = (
@@ -389,6 +285,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         revision="20260414_004_create_governance_tables",
         description="Create parliament elections, mandates, and signature tables",
         upgrade=_create_governance_tables,
+    ),
+    Migration(
+        revision="20260415_001_create_oauth_tables",
+        description="Create OAuth client, authorization code, and access token tables",
+        upgrade=_create_oauth_tables,
     ),
 )
 

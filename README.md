@@ -37,6 +37,11 @@ RGOV — Ratcraftia Government Web Portal. Проект собран как мо
   - организациям можно хранить собственный баланс Ratubles
   - приём на работу и увольнение
   - управление правами доступа через permissions
+- Внешние разработчики:
+  - frontend-раздел "Разработчикам" для регистрации OAuth-приложений
+  - отдельная публичная документация OpenAPI: `/api/public/docs`
+  - OAuth authorization-code flow для входа через RGOV
+  - каждое приложение должно быть одобрено администратором перед использованием
 
 ## Быстрый старт
 
@@ -51,18 +56,21 @@ docker compose up --build
 - портал: `http://localhost:8800`
 - backend API: `http://localhost:8800/api`
 - Swagger: `http://localhost:8800/docs`
+- Public OAuth docs: `http://localhost:8800/api/public/docs`
 
 ### Локально
 
 Backend:
 
 ```bash
+docker compose up postgres -d
 cd backend
 uv sync --extra dev
 uv run uvicorn app.main:app --reload
 ```
 
 Миграции схемы БД применяются автоматически при старте backend и через `RCS`.
+По умолчанию backend ожидает PostgreSQL на `postgresql+psycopg://rgov:rgov@localhost:5432/rgov`.
 
 Frontend:
 
@@ -115,7 +123,9 @@ npm run dev
 
 ## Замечания
 
-- База данных по умолчанию — SQLite.
+- База данных по умолчанию — PostgreSQL.
+- SQLite остаётся удобным режимом для локальных тестов и временных фикстур.
 - Старые поля ролей автоматически мигрируются в `permissions` при запуске backend.
 - УАН в списках пользователей маскируется, но остаётся доступен владельцу в профиле и DID.
 - Смена логина ограничена одним разом в сутки по часовому поясу `Europe/Moscow`.
+- Публичный OAuth flow начинается с `/api/public/oauth/authorize`, а обмен кода на токен выполняется через `/api/public/oauth/token`.

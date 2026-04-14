@@ -1,14 +1,20 @@
 import type {
   AdminLogRead,
   BillRead,
+  DeveloperAppCreateResponse,
+  DeveloperAppRead,
+  DeveloperAppSecretResponse,
+  DeveloperScopeRead,
   DidTokenResponse,
   LawRead,
   MailRead,
   MessageResponse,
   NewsRead,
+  OAuthAuthorizationResponse,
   OrganizationRead,
   ParliamentElectionRead,
   ParliamentSummaryRead,
+  PublicOAuthAppRead,
   PushConfigResponse,
   RatublesDirectoryEntryRead,
   RatublesTransactionRead,
@@ -424,5 +430,107 @@ export class ApiClient {
 
   getAdminLogs() {
     return this.request<AdminLogRead[]>("/admin/logs");
+  }
+
+  getAdminOAuthApps() {
+    return this.request<DeveloperAppRead[]>("/admin/oauth/apps");
+  }
+
+  reviewAdminOAuthApp(
+    appId: number,
+    payload: { status: "approved" | "rejected" | "revoked"; reviewNote: string },
+  ) {
+    return this.request<DeveloperAppRead>(`/admin/oauth/apps/${appId}/review`, {
+      method: "POST",
+      body: {
+        status: payload.status,
+        review_note: payload.reviewNote,
+      },
+    });
+  }
+
+  getDeveloperScopes() {
+    return this.request<DeveloperScopeRead[]>("/developer/scopes", {
+      requiresAuth: false,
+    });
+  }
+
+  getDeveloperApps() {
+    return this.request<DeveloperAppRead[]>("/developer/apps");
+  }
+
+  createDeveloperApp(payload: {
+    name: string;
+    slug: string;
+    description: string;
+    websiteUrl: string;
+    redirectUris: string[];
+    allowedScopes: string[];
+  }) {
+    return this.request<DeveloperAppCreateResponse>("/developer/apps", {
+      method: "POST",
+      body: {
+        name: payload.name,
+        slug: payload.slug,
+        description: payload.description,
+        website_url: payload.websiteUrl,
+        redirect_uris: payload.redirectUris,
+        allowed_scopes: payload.allowedScopes,
+      },
+    });
+  }
+
+  rotateDeveloperAppSecret(appId: number) {
+    return this.request<DeveloperAppSecretResponse>(
+      `/developer/apps/${appId}/rotate-secret`,
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  getPublicOAuthApp(clientId: string) {
+    return this.request<PublicOAuthAppRead>(`/public/oauth/apps/${clientId}`, {
+      requiresAuth: false,
+    });
+  }
+
+  completeOAuthAuthorization(payload: {
+    clientId: string;
+    redirectUri: string;
+    responseType: "code";
+    scope: string;
+    state?: string;
+  }) {
+    return this.request<OAuthAuthorizationResponse>("/public/oauth/authorize/complete", {
+      method: "POST",
+      body: {
+        client_id: payload.clientId,
+        redirect_uri: payload.redirectUri,
+        response_type: payload.responseType,
+        scope: payload.scope,
+        state: payload.state ?? null,
+      },
+    });
+  }
+
+  denyOAuthAuthorization(payload: {
+    clientId: string;
+    redirectUri: string;
+    responseType: "code";
+    scope: string;
+    state?: string;
+  }) {
+    return this.request<OAuthAuthorizationResponse>("/public/oauth/authorize/deny", {
+      method: "POST",
+      body: {
+        client_id: payload.clientId,
+        redirect_uri: payload.redirectUri,
+        response_type: payload.responseType,
+        scope: payload.scope,
+        state: payload.state ?? null,
+      },
+      requiresAuth: false,
+    });
   }
 }

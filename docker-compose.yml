@@ -1,15 +1,31 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: rgov-postgres
+    environment:
+      POSTGRES_DB: rgov
+      POSTGRES_USER: rgov
+      POSTGRES_PASSWORD: rgov
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rgov -d rgov"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build:
       context: ./backend
     container_name: rgov-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      RGOV_DATABASE_URL: sqlite:////app/data/rgov.db
+      RGOV_DATABASE_URL: postgresql+psycopg://rgov:rgov@postgres:5432/rgov
       RGOV_SECRET_KEY: ratcraftia-compose-secret
       RGOV_CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:8800,http://127.0.0.1:8800
       RGOV_LOCAL_TIMEZONE: Europe/Moscow
-    volumes:
-      - rgov_data:/app/data
 
   frontend:
     build:
@@ -32,4 +48,4 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
 
 volumes:
-  rgov_data:
+  postgres_data:

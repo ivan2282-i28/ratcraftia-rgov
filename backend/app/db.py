@@ -27,7 +27,12 @@ def get_engine():
     settings = get_settings()
     _ensure_sqlite_directory(settings.database_url)
     connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-    return create_engine(settings.database_url, echo=False, connect_args=connect_args)
+    return create_engine(
+        settings.database_url,
+        echo=False,
+        connect_args=connect_args,
+        pool_pre_ping=not settings.database_url.startswith("sqlite"),
+    )
 
 
 def reset_engine_cache() -> None:

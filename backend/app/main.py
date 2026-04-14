@@ -8,7 +8,8 @@ from sqlmodel import Session
 
 from .core.config import get_settings
 from .db import get_engine, init_db
-from .routers import admin, auth, did, laws, mail, news, notifications, parliament, ratubles, referenda
+from .public_api import public_api
+from .routers import admin, auth, developer, did, laws, mail, news, notifications, parliament, ratubles, referenda
 from .services.bootstrap import seed_demo_data
 
 
@@ -24,7 +25,10 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
-    description="Государственный портал Ratcraftia.",
+    description=(
+        "Государственный портал Ratcraftia. "
+        "Публичная OAuth/OpenAPI документация для внешних разработчиков доступна по /api/public/docs."
+    ),
     lifespan=lifespan,
 )
 
@@ -42,6 +46,7 @@ def healthcheck() -> dict[str, str]:
     return {"status": "ok", "service": "rgov-backend"}
 
 
+app.mount("/api/public", public_api)
 app.include_router(auth.router)
 app.include_router(did.router)
 app.include_router(mail.router)
@@ -52,3 +57,4 @@ app.include_router(ratubles.router)
 app.include_router(parliament.router)
 app.include_router(referenda.router)
 app.include_router(admin.router)
+app.include_router(developer.router)

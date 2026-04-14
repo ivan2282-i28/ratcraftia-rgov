@@ -341,6 +341,94 @@ class AdminLogRead(BaseModel):
     created_at: datetime
 
 
+class DeveloperAppCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    slug: str = Field(min_length=2, max_length=64)
+    description: str = Field(default="", max_length=500)
+    website_url: str = Field(default="", max_length=255)
+    redirect_uris: list[str] = Field(min_length=1)
+    allowed_scopes: list[str] = Field(default_factory=lambda: ["profile.basic"])
+
+
+class DeveloperAppRead(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: str
+    website_url: str
+    redirect_uris: list[str]
+    allowed_scopes: list[str]
+    client_id: str
+    status: str
+    review_note: str
+    owner_name: str | None = None
+    approved_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    last_secret_rotated_at: datetime | None = None
+
+
+class DeveloperAppCreateResponse(DeveloperAppRead):
+    client_secret: str
+
+
+class DeveloperAppSecretResponse(BaseModel):
+    client_id: str
+    client_secret: str
+    rotated_at: datetime
+
+
+class DeveloperAppReviewRequest(BaseModel):
+    status: str = Field(pattern="^(approved|rejected|revoked)$")
+    review_note: str = Field(default="", max_length=500)
+
+
+class OAuthAuthorizationRequest(BaseModel):
+    client_id: str = Field(min_length=8, max_length=128)
+    redirect_uri: str = Field(min_length=1, max_length=500)
+    response_type: str = Field(default="code", pattern="^code$")
+    scope: str = Field(default="profile.basic", max_length=255)
+    state: str | None = Field(default=None, max_length=255)
+
+
+class OAuthAuthorizationResponse(BaseModel):
+    redirect_to: str
+    expires_at: datetime | None = None
+
+
+class OAuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    scope: str
+
+
+class OAuthUserInfoResponse(BaseModel):
+    sub: str
+    client_id: str
+    scopes: list[str]
+    uin: str
+    login: str
+    first_name: str
+    last_name: str
+    patronymic: str
+    full_name: str
+    organization_slug: str | None = None
+    organization_name: str | None = None
+    position_title: str | None = None
+    permissions: list[str] | None = None
+
+
+class PublicOAuthAppRead(BaseModel):
+    client_id: str
+    name: str
+    description: str
+    website_url: str
+    status: str
+    owner_name: str
+    allowed_scopes: list[str]
+
+
 class PushConfigResponse(BaseModel):
     public_vapid_key: str
     contact_email: str

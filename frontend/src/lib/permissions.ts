@@ -9,6 +9,8 @@ export const permissions = {
   orgsCreate: "admin.organizations.create",
   personnelManage: "admin.personnel.manage",
   adminLogsRead: "admin.logs.read",
+  oauthAppsRead: "admin.oauth_apps.read",
+  oauthAppsReview: "admin.oauth_apps.review",
   newsManage: "news.manage",
   billsManage: "bills.manage",
   referendaManage: "referenda.manage",

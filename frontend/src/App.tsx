@@ -28,6 +28,7 @@ import {
 import { alpha, useTheme } from "@mui/material/styles";
 import AdminPanelSettingsRoundedIcon from "@mui/icons-material/AdminPanelSettingsRounded";
 import CampaignRoundedIcon from "@mui/icons-material/CampaignRounded";
+import CodeRoundedIcon from "@mui/icons-material/CodeRounded";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
@@ -43,6 +44,8 @@ import AccountBalanceRoundedIcon from "@mui/icons-material/AccountBalanceRounded
 import type {
   AdminLogRead,
   BillRead,
+  DeveloperAppRead,
+  DeveloperScopeRead,
   DidTokenResponse,
   LawRead,
   MailRead,
@@ -50,6 +53,7 @@ import type {
   OrganizationRead,
   ParliamentElectionRead,
   ParliamentSummaryRead,
+  PublicOAuthAppRead,
   PushConfigResponse,
   PushStatus,
   RatublesDirectoryEntryRead,
@@ -76,6 +80,7 @@ import { ReferendaSection } from "./components/sections/ReferendaSection";
 import { LawsSection } from "./components/sections/LawsSection";
 import { NewsSection } from "./components/sections/NewsSection";
 import { AdminSection } from "./components/sections/AdminSection";
+import { DeveloperSection } from "./components/sections/DeveloperSection";
 
 type PortalSection =
   | "dashboard"
@@ -85,6 +90,7 @@ type PortalSection =
   | "referenda"
   | "laws"
   | "news"
+  | "developers"
   | "admin";
 
 type SnackbarState = {
@@ -97,6 +103,31 @@ type SessionState = {
   token: string | null;
   profile: UserRead | null;
 };
+
+type DeveloperAppForm = {
+  name: string;
+  slug: string;
+  description: string;
+  websiteUrl: string;
+  redirectUris: string;
+  allowedScopes: string[];
+};
+
+type LatestSecretState = {
+  label: string;
+  clientId: string;
+  clientSecret: string;
+  rotatedAt: string;
+} | null;
+
+type OAuthRequestState = {
+  clientId: string;
+  redirectUri: string;
+  responseType: "code";
+  scope: string;
+  scopes: string[];
+  state?: string;
+} | null;
 
 type PortalData = {
   did: DidTokenResponse | null;
@@ -114,6 +145,9 @@ type PortalData = {
   users: UserRead[];
   organizations: OrganizationRead[];
   adminLogs: AdminLogRead[];
+  developerApps: DeveloperAppRead[];
+  oauthScopes: DeveloperScopeRead[];
+  adminOAuthApps: DeveloperAppRead[];
   pushConfig: PushConfigResponse | null;
   pushStatus: PushStatus;
 };
@@ -160,6 +194,8 @@ const permissionPresets = [
       permissions.newsManage,
       permissions.orgsCreate,
       permissions.orgsRead,
+      permissions.oauthAppsRead,
+      permissions.oauthAppsReview,
       permissions.personnelManage,
       permissions.ratublesMint,
       permissions.referendaManage,
@@ -195,6 +231,9 @@ const emptyPortalData: PortalData = {
   users: [],
   organizations: [],
   adminLogs: [],
+  developerApps: [],
+  oauthScopes: [],
+  adminOAuthApps: [],
   pushConfig: null,
   pushStatus: emptyPushStatus,
 };
@@ -220,7 +259,10 @@ function optionalRequest<T>(promise: Promise<T>, fallback: T) {
   });
 }
 
-function parseSection(hash: string): PortalSection {
+function parseSection(pathname: string, hash: string): PortalSection {
+  if (pathname === "/oauth/authorize") {
+    return "developers";
+  }
   const candidate = hash.replace("#", "") as PortalSection;
   return [
     "dashboard",
@@ -230,6 +272,7 @@ function parseSection(hash: string): PortalSection {
     "referenda",
     "laws",
     "news",
+    "developers",
     "admin",
   ].includes(candidate)
     ? candidate
@@ -253,6 +296,39 @@ function parseDirectoryValue(value: string) {
   return {
     kind: kind as "user" | "organization",
     id: Number(rawId),
+  };
+}
+
+function parseOAuthScopeString(value: string) {
+  return value
+    .split(" ")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readOAuthRequest(pathname: string, search: string): OAuthRequestState {
+  if (pathname !== "/oauth/authorize") {
+    return null;
+  }
+
+  const params = new URLSearchParams(search);
+  const clientId = params.get("client_id")?.trim() ?? "";
+  const redirectUri = params.get("redirect_uri")?.trim() ?? "";
+  if (!clientId || !redirectUri) {
+    return null;
+  }
+
+  const responseType = (params.get("response_type")?.trim() || "code") as "code";
+  const scope = params.get("scope")?.trim() || "profile.basic";
+  const state = params.get("state")?.trim() || undefined;
+
+  return {
+    clientId,
+    redirectUri,
+    responseType,
+    scope,
+    scopes: parseOAuthScopeString(scope),
+    state,
   };
 }
 
@@ -285,8 +361,14 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   const [session, setSession] = React.useState<SessionState>(() => readStoredSession());
   const [portalData, setPortalData] = React.useState<PortalData>(emptyPortalData);
   const [section, setSection] = React.useState<PortalSection>(() =>
-    parseSection(window.location.hash),
+    parseSection(window.location.pathname, window.location.hash),
   );
+  const [oauthRequest, setOAuthRequest] = React.useState<OAuthRequestState>(() =>
+    readOAuthRequest(window.location.pathname, window.location.search),
+  );
+  const [oauthRequestApp, setOAuthRequestApp] = React.useState<PublicOAuthAppRead | null>(null);
+  const [oauthRequestLoading, setOAuthRequestLoading] = React.useState(false);
+  const [oauthRequestError, setOAuthRequestError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = React.useState(false);
@@ -340,6 +422,15 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     slug: "",
     description: "",
   });
+  const [developerAppForm, setDeveloperAppForm] = React.useState<DeveloperAppForm>({
+    name: "",
+    slug: "",
+    description: "",
+    websiteUrl: "",
+    redirectUris: "",
+    allowedScopes: ["profile.basic"],
+  });
+  const [latestSecret, setLatestSecret] = React.useState<LatestSecretState>(null);
   const [createUserForm, setCreateUserForm] = React.useState({
     uin: "",
     uan: "",
@@ -368,9 +459,16 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   api.setToken(session.token);
 
   React.useEffect(() => {
-    const handleHashChange = () => setSection(parseSection(window.location.hash));
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
+    const handleLocationChange = () => {
+      setSection(parseSection(window.location.pathname, window.location.hash));
+      setOAuthRequest(readOAuthRequest(window.location.pathname, window.location.search));
+    };
+    window.addEventListener("hashchange", handleLocationChange);
+    window.addEventListener("popstate", handleLocationChange);
+    return () => {
+      window.removeEventListener("hashchange", handleLocationChange);
+      window.removeEventListener("popstate", handleLocationChange);
+    };
   }, []);
 
   React.useEffect(() => {
@@ -427,6 +525,44 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     }));
   }, [mintForm.recipient, portalData.directory]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadOauthRequestApp() {
+      if (!oauthRequest) {
+        setOAuthRequestApp(null);
+        setOAuthRequestError(null);
+        setOAuthRequestLoading(false);
+        return;
+      }
+
+      setOAuthRequestLoading(true);
+      setOAuthRequestError(null);
+
+      try {
+        const application = await api.getPublicOAuthApp(oauthRequest.clientId);
+        if (!cancelled) {
+          setOAuthRequestApp(application);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setOAuthRequestApp(null);
+          setOAuthRequestError(getErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setOAuthRequestLoading(false);
+        }
+      }
+    }
+
+    void loadOauthRequestApp();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, oauthRequest]);
+
   const openSnackbar = React.useEffectEvent(
     (message: string, severity: SnackbarState["severity"] = "info") => {
       setSnackbar({ open: true, message, severity });
@@ -436,6 +572,13 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   const logout = React.useEffectEvent(() => {
     setSession({ token: null, profile: null });
     setPortalData(emptyPortalData);
+    setLatestSecret(null);
+    setOAuthRequestApp(null);
+    setOAuthRequestError(null);
+    if (window.location.pathname === "/oauth/authorize") {
+      window.history.replaceState({}, "", "/");
+      setOAuthRequest(null);
+    }
     window.location.hash = "dashboard";
     openSnackbar("Сеанс завершён.", "info");
   });
@@ -467,6 +610,9 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
         organizations,
         ledger,
         adminLogs,
+        developerApps,
+        oauthScopes,
+        adminOAuthApps,
       ] = await Promise.all([
         api.me(),
         api.didToken(),
@@ -485,6 +631,9 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
         optionalRequest(api.getOrganizations(), []),
         optionalRequest(api.getRatublesLedger(), []),
         optionalRequest(api.getAdminLogs(), []),
+        api.getDeveloperApps(),
+        api.getDeveloperScopes(),
+        optionalRequest(api.getAdminOAuthApps(), []),
       ]);
 
       let pushStatus = await getPushStatus();
@@ -527,6 +676,9 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
           users,
           organizations,
           adminLogs,
+          developerApps,
+          oauthScopes,
+          adminOAuthApps,
           pushConfig,
           pushStatus,
         });
@@ -608,6 +760,14 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     session.profile,
     permissions.adminLogsRead,
   );
+  const canReadOAuthApps = hasPermission(
+    session.profile,
+    permissions.oauthAppsRead,
+  );
+  const canReviewOAuthApps = hasPermission(
+    session.profile,
+    permissions.oauthAppsReview,
+  );
 
   const adminVisible =
     canReadUsers ||
@@ -616,7 +776,9 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     canWritePermissions ||
     canManagePersonnel ||
     canCreateOrganizations ||
-    canReadAdminLogs;
+    canReadAdminLogs ||
+    canReadOAuthApps ||
+    canReviewOAuthApps;
 
   const filteredLaws = portalData.laws.filter((law) =>
     [law.title, law.slug, law.level, law.adopted_via, law.current_text]
@@ -647,6 +809,11 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     { key: "laws" as const, label: "Законы", icon: <GavelRoundedIcon /> },
     { key: "news" as const, label: "Новости", icon: <CampaignRoundedIcon /> },
     {
+      key: "developers" as const,
+      label: "Разработчикам",
+      icon: <CodeRoundedIcon />,
+    },
+    {
       key: "admin" as const,
       label: "Управление",
       icon: <AdminPanelSettingsRoundedIcon />,
@@ -655,6 +822,12 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   ];
 
   const handleSectionChange = (nextSection: PortalSection) => {
+    if (window.location.pathname === "/oauth/authorize") {
+      window.history.replaceState({}, "", "/");
+      setOAuthRequest(null);
+      setOAuthRequestApp(null);
+      setOAuthRequestError(null);
+    }
     window.location.hash = nextSection;
     setSection(nextSection);
     setMobileDrawerOpen(false);
@@ -1019,6 +1192,91 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
                 }
               />
             )}
+            {section === "developers" && (
+              <DeveloperSection
+                developerApps={portalData.developerApps}
+                oauthScopes={portalData.oauthScopes}
+                createAppForm={developerAppForm}
+                setCreateAppForm={setDeveloperAppForm}
+                latestSecret={latestSecret}
+                oauthRequest={oauthRequest}
+                oauthRequestApp={oauthRequestApp}
+                oauthRequestLoading={oauthRequestLoading}
+                oauthRequestError={oauthRequestError}
+                submitting={submitting}
+                onCreateApp={() =>
+                  void runAction(async () => {
+                    const created = await api.createDeveloperApp({
+                      name: developerAppForm.name.trim(),
+                      slug: developerAppForm.slug.trim(),
+                      description: developerAppForm.description.trim(),
+                      websiteUrl: developerAppForm.websiteUrl.trim(),
+                      redirectUris: developerAppForm.redirectUris
+                        .split("\n")
+                        .map((item) => item.trim())
+                        .filter(Boolean),
+                      allowedScopes: developerAppForm.allowedScopes,
+                    });
+                    setLatestSecret({
+                      label: `Секрет для ${created.name}`,
+                      clientId: created.client_id,
+                      clientSecret: created.client_secret,
+                      rotatedAt: created.created_at,
+                    });
+                    setDeveloperAppForm({
+                      name: "",
+                      slug: "",
+                      description: "",
+                      websiteUrl: "",
+                      redirectUris: "",
+                      allowedScopes: ["profile.basic"],
+                    });
+                  }, "OAuth-приложение зарегистрировано и отправлено на модерацию.")
+                }
+                onRotateSecret={(appId) =>
+                  void runAction(async () => {
+                    const app = portalData.developerApps.find((candidate) => candidate.id === appId);
+                    const rotated = await api.rotateDeveloperAppSecret(appId);
+                    setLatestSecret({
+                      label: `Новый секрет для ${app?.name ?? rotated.client_id}`,
+                      clientId: rotated.client_id,
+                      clientSecret: rotated.client_secret,
+                      rotatedAt: rotated.rotated_at,
+                    });
+                  }, "Client secret обновлён.")
+                }
+                onApproveOAuthRequest={() =>
+                  void runAction(async () => {
+                    if (!oauthRequest) {
+                      return;
+                    }
+                    const result = await api.completeOAuthAuthorization({
+                      clientId: oauthRequest.clientId,
+                      redirectUri: oauthRequest.redirectUri,
+                      responseType: oauthRequest.responseType,
+                      scope: oauthRequest.scope,
+                      state: oauthRequest.state,
+                    });
+                    window.location.href = result.redirect_to;
+                  }, undefined, false)
+                }
+                onDenyOAuthRequest={() =>
+                  void runAction(async () => {
+                    if (!oauthRequest) {
+                      return;
+                    }
+                    const result = await api.denyOAuthAuthorization({
+                      clientId: oauthRequest.clientId,
+                      redirectUri: oauthRequest.redirectUri,
+                      responseType: oauthRequest.responseType,
+                      scope: oauthRequest.scope,
+                      state: oauthRequest.state,
+                    });
+                    window.location.href = result.redirect_to;
+                  }, undefined, false)
+                }
+              />
+            )}
             {section === "admin" && (
               <AdminSection
                 visible={adminVisible}
@@ -1027,6 +1285,7 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
                 users={portalData.users}
                 organizations={portalData.organizations}
                 adminLogs={portalData.adminLogs}
+                oauthApps={portalData.adminOAuthApps}
                 createUserForm={createUserForm}
                 setCreateUserForm={setCreateUserForm}
                 selectedUserId={selectedUserId}
@@ -1044,6 +1303,8 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
                 canManagePersonnel={canManagePersonnel}
                 canCreateOrganizations={canCreateOrganizations}
                 canReadAdminLogs={canReadAdminLogs}
+                canReadOAuthApps={canReadOAuthApps}
+                canReviewOAuthApps={canReviewOAuthApps}
                 submitting={submitting}
                 onCreateUser={() =>
                   void runAction(async () => {
@@ -1128,6 +1389,11 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
                     });
                     setOrganizationForm({ name: "", slug: "", description: "" });
                   }, "Организация создана.")
+                }
+                onReviewOAuthApp={(appId, status, reviewNote) =>
+                  void runAction(async () => {
+                    await api.reviewAdminOAuthApp(appId, { status, reviewNote });
+                  }, "Статус OAuth-приложения обновлён.")
                 }
               />
             )}

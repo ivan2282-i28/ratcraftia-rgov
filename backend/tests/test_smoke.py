@@ -142,6 +142,152 @@ def test_change_password_and_rgov_login() -> None:
         assert universal_uan_login.status_code == 200
 
 
+def test_oauth_app_registration_approval_and_userinfo() -> None:
+    db_path = Path("data/test-oauth-flow.db")
+    if db_path.exists():
+        db_path.unlink()
+    os.environ["RGOV_DATABASE_URL"] = f"sqlite:///{db_path}"
+
+    from app.db import reset_engine_cache
+    from app.main import app
+
+    reset_engine_cache()
+
+    with TestClient(app) as client:
+        root_login = client.post(
+            "/api/auth/login/password",
+            json={"identifier": "root", "password": "RGOV-DEFAULT_ROOT"},
+        )
+        assert root_login.status_code == 200
+        root_token = root_login.json()["access_token"]
+
+        developer = _create_user(
+            client,
+            root_token,
+            uin="8.10.900001",
+            uan="RAT-DEV-001",
+            login="developer",
+            permissions=[],
+        )
+        citizen = _create_user(
+            client,
+            root_token,
+            uin="8.10.900002",
+            uan="RAT-CIT-001",
+            login="citizen",
+            permissions=[],
+        )
+
+        developer_login = client.post(
+            "/api/auth/login/password",
+            json={"identifier": "developer", "password": "ratcraftia"},
+        )
+        assert developer_login.status_code == 200
+        developer_token = developer_login.json()["access_token"]
+
+        citizen_login = client.post(
+            "/api/auth/login/password",
+            json={"identifier": "citizen", "password": "ratcraftia"},
+        )
+        assert citizen_login.status_code == 200
+        citizen_token = citizen_login.json()["access_token"]
+
+        app_create = client.post(
+            "/api/developer/apps",
+            headers={"Authorization": f"Bearer {developer_token}"},
+            json={
+                "name": "Rat Social",
+                "slug": "rat-social",
+                "description": "Внешнее приложение для входа через RGOV",
+                "website_url": "https://social.ratcraftia.test",
+                "redirect_uris": ["https://social.ratcraftia.test/callback"],
+                "allowed_scopes": ["profile.basic", "profile.organization"],
+            },
+        )
+        assert app_create.status_code == 201
+        created_app = app_create.json()
+        assert created_app["status"] == "pending"
+        assert created_app["client_secret"]
+
+        public_metadata = client.get(f"/api/public/oauth/apps/{created_app['client_id']}")
+        assert public_metadata.status_code == 200
+        assert public_metadata.json()["status"] == "pending"
+
+        denied_before_approval = client.post(
+            "/api/public/oauth/authorize/complete",
+            headers={"Authorization": f"Bearer {citizen_token}"},
+            json={
+                "client_id": created_app["client_id"],
+                "redirect_uri": "https://social.ratcraftia.test/callback",
+                "response_type": "code",
+                "scope": "profile.basic",
+                "state": "pre-approval",
+            },
+        )
+        assert denied_before_approval.status_code == 403
+
+        app_review = client.post(
+            f"/api/admin/oauth/apps/{created_app['id']}/review",
+            headers={"Authorization": f"Bearer {root_token}"},
+            json={"status": "approved", "review_note": "Security review passed."},
+        )
+        assert app_review.status_code == 200
+        assert app_review.json()["status"] == "approved"
+
+        oauth_apps = client.get(
+            "/api/admin/oauth/apps",
+            headers={"Authorization": f"Bearer {root_token}"},
+        )
+        assert oauth_apps.status_code == 200
+        assert oauth_apps.json()[0]["client_id"] == created_app["client_id"]
+
+        authorization = client.post(
+            "/api/public/oauth/authorize/complete",
+            headers={"Authorization": f"Bearer {citizen_token}"},
+            json={
+                "client_id": created_app["client_id"],
+                "redirect_uri": "https://social.ratcraftia.test/callback",
+                "response_type": "code",
+                "scope": "profile.basic profile.organization",
+                "state": "oauth-state-123",
+            },
+        )
+        assert authorization.status_code == 200
+        redirect_to = authorization.json()["redirect_to"]
+        assert "code=" in redirect_to
+        assert "state=oauth-state-123" in redirect_to
+        code = redirect_to.split("code=", 1)[1].split("&", 1)[0]
+
+        token_response = client.post(
+            "/api/public/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": created_app["client_id"],
+                "client_secret": created_app["client_secret"],
+                "code": code,
+                "redirect_uri": "https://social.ratcraftia.test/callback",
+            },
+        )
+        assert token_response.status_code == 200
+        oauth_access_token = token_response.json()["access_token"]
+        assert token_response.json()["scope"] == "profile.basic profile.organization"
+
+        userinfo = client.get(
+            "/api/public/userinfo",
+            headers={"Authorization": f"Bearer {oauth_access_token}"},
+        )
+        assert userinfo.status_code == 200
+        payload = userinfo.json()
+        assert payload["sub"] == citizen["uin"]
+        assert payload["client_id"] == created_app["client_id"]
+        assert payload["scopes"] == ["profile.basic", "profile.organization"]
+        assert payload["organization_name"] is None
+
+        docs = client.get("/api/public/docs")
+        assert docs.status_code == 200
+        assert "RGOV Public API" in docs.text
+
+
 def test_portal_smoke() -> None:
     db_path = Path("data/test-rgov.db")
     if db_path.exists():

@@ -47,6 +47,28 @@ def create_access_token(user: User) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
+def create_oauth_access_token(
+    user: User,
+    *,
+    client_id: str,
+    scopes: list[str],
+    token_id: str,
+) -> tuple[str, datetime]:
+    settings = get_settings()
+    issued_at, expires_at = _token_timestamps(settings.oauth_access_token_ttl_minutes)
+    payload = {
+        "sub": user.uin,
+        "login": user.login,
+        "client_id": client_id,
+        "scope": scopes,
+        "jti": token_id,
+        "iat": issued_at,
+        "exp": expires_at,
+        "token_type": "oauth_access",
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm), expires_at
+
+
 def create_did_token(user: User) -> tuple[str, datetime, dict[str, str]]:
     settings = get_settings()
     issued_at, expires_at = _token_timestamps(settings.did_token_ttl_minutes)

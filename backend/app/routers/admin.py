@@ -8,6 +8,8 @@ from ..db import get_session
 from ..models import Organization, User
 from ..schemas import (
     AdminLogRead,
+    DeveloperAppRead,
+    DeveloperAppReviewRequest,
     HireRequest,
     OrganizationCreate,
     OrganizationRead,
@@ -16,8 +18,11 @@ from ..schemas import (
     UserRead,
     UserUpdate,
 )
+from ..services.oauth import list_all_oauth_apps, review_oauth_app
 from ..services.permissions import (
     ADMIN_LOGS_READ_PERMISSION,
+    OAUTH_APPS_READ_PERMISSION,
+    OAUTH_APPS_REVIEW_PERMISSION,
     ORGS_CREATE_PERMISSION,
     ORGS_READ_PERMISSION,
     USERS_CREATE_PERMISSION,
@@ -186,3 +191,37 @@ def get_admin_logs(
             detail="Недостаточно прав для просмотра журналов.",
         )
     return list_admin_logs(session, user)
+
+
+@router.get("/oauth/apps", response_model=list[DeveloperAppRead])
+def get_oauth_apps(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> list[DeveloperAppRead]:
+    if not has_permission(user, OAUTH_APPS_READ_PERMISSION):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав для просмотра OAuth-приложений.",
+        )
+    return list_all_oauth_apps(session, user)
+
+
+@router.post("/oauth/apps/{app_id}/review", response_model=DeveloperAppRead)
+def review_registered_oauth_app(
+    app_id: int,
+    payload: DeveloperAppReviewRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> DeveloperAppRead:
+    if not has_permission(user, OAUTH_APPS_REVIEW_PERMISSION):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав для модерации OAuth-приложений.",
+        )
+    try:
+        return review_oauth_app(session, user, app_id, payload)
+    except PermissionError as error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+    except ValueError as error:
+        status_code_value = status.HTTP_404_NOT_FOUND if "не найдено" in str(error).lower() else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code_value, detail=str(error)) from error

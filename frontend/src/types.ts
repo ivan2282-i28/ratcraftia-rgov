@@ -197,6 +197,54 @@ export interface AdminLogRead {
   created_at: string;
 }
 
+export interface DeveloperScopeRead {
+  scope: string;
+  description: string;
+}
+
+export interface DeveloperAppRead {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  website_url: string;
+  redirect_uris: string[];
+  allowed_scopes: string[];
+  client_id: string;
+  status: "pending" | "approved" | "rejected" | "revoked";
+  review_note: string;
+  owner_name: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  last_secret_rotated_at: string | null;
+}
+
+export interface DeveloperAppCreateResponse extends DeveloperAppRead {
+  client_secret: string;
+}
+
+export interface DeveloperAppSecretResponse {
+  client_id: string;
+  client_secret: string;
+  rotated_at: string;
+}
+
+export interface PublicOAuthAppRead {
+  client_id: string;
+  name: string;
+  description: string;
+  website_url: string;
+  status: "pending" | "approved" | "rejected" | "revoked";
+  owner_name: string;
+  allowed_scopes: string[];
+}
+
+export interface OAuthAuthorizationResponse {
+  redirect_to: string;
+  expires_at: string | null;
+}
+
 export interface PushConfigResponse {
   public_vapid_key: string;
   contact_email: string;

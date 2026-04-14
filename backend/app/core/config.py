@@ -19,6 +19,7 @@ class Settings:
     algorithm: str
     access_token_ttl_minutes: int
     did_token_ttl_minutes: int
+    oauth_access_token_ttl_minutes: int
     database_url: str
     cors_origins_raw: str
     local_timezone: str
@@ -44,7 +45,13 @@ def get_settings() -> Settings:
         algorithm=os.getenv("RGOV_JWT_ALGORITHM", "HS256"),
         access_token_ttl_minutes=int(os.getenv("RGOV_ACCESS_TTL_MINUTES", "720")),
         did_token_ttl_minutes=int(os.getenv("RGOV_DID_TTL_MINUTES", "10")),
-        database_url=os.getenv("RGOV_DATABASE_URL", "sqlite:///./data/rgov.db"),
+        oauth_access_token_ttl_minutes=int(
+            os.getenv("RGOV_OAUTH_ACCESS_TTL_MINUTES", "60")
+        ),
+        database_url=os.getenv(
+            "RGOV_DATABASE_URL",
+            "postgresql+psycopg://rgov:rgov@localhost:5432/rgov",
+        ),
         cors_origins_raw=os.getenv(
             "RGOV_CORS_ORIGINS",
             "http://localhost:8080,http://127.0.0.1:8080,http://localhost:3000,*",

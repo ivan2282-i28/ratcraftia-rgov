@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+  Alert,
   Button,
   Chip,
   MenuItem,
@@ -11,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import PersonAddAltRoundedIcon from "@mui/icons-material/PersonAddAltRounded";
-import type { AdminLogRead, OrganizationRead, UserRead } from "../../types";
+import type { AdminLogRead, DeveloperAppRead, OrganizationRead, UserRead } from "../../types";
 import { formatDateTime, formatNumber } from "../../lib/format";
 import { EmptyState, HeroCard, ResponsiveGrid, SectionCard } from "../common";
 
@@ -52,6 +53,7 @@ export function AdminSection(props: {
   users: UserRead[];
   organizations: OrganizationRead[];
   adminLogs: AdminLogRead[];
+  oauthApps: DeveloperAppRead[];
   createUserForm: CreateUserForm;
   setCreateUserForm: React.Dispatch<React.SetStateAction<CreateUserForm>>;
   selectedUserId: number | "";
@@ -69,6 +71,8 @@ export function AdminSection(props: {
   canManagePersonnel: boolean;
   canCreateOrganizations: boolean;
   canReadAdminLogs: boolean;
+  canReadOAuthApps: boolean;
+  canReviewOAuthApps: boolean;
   submitting: boolean;
   onCreateUser: () => void;
   onUpdateUser: () => void;
@@ -76,15 +80,23 @@ export function AdminSection(props: {
   onHire: () => void;
   onFire: () => void;
   onCreateOrganization: () => void;
+  onReviewOAuthApp: (
+    appId: number,
+    status: "approved" | "rejected" | "revoked",
+    reviewNote: string,
+  ) => void;
 }) {
+  const [oauthReviewNotes, setOauthReviewNotes] = React.useState<Record<number, string>>({});
+
   return (
     <Stack spacing={2.5}>
       <HeroCard
         title="Управление"
-        description="Пользователи, организации, кадровые операции и административный журнал без внешних OAuth-приложений."
+        description="Пользователи, организации, кадровые операции, одобрение внешних OAuth-приложений и административный журнал."
         chips={[
           `${props.users.length} пользователей`,
           `${props.organizations.length} организаций`,
+          `${props.oauthApps.length} OAuth apps`,
           `${props.adminLogs.length} записей журнала`,
         ]}
       />
@@ -105,6 +117,7 @@ export function AdminSection(props: {
             <Tab label="Пользователи" />
             <Tab label="Организации" />
             <Tab label="Журнал" />
+            <Tab label="OAuth apps" />
           </Tabs>
           {props.adminTab === 0 && (
             <ResponsiveGrid columns={{ xs: "1fr", xl: "400px minmax(0, 1fr)" }}>
@@ -552,6 +565,127 @@ export function AdminSection(props: {
                 </Stack>
               ) : (
                 <EmptyState text="У вашей учётной записи нет права на просмотр журналов." />
+              )}
+            </SectionCard>
+          )}
+          {props.adminTab === 3 && (
+            <SectionCard
+              title="OAuth-приложения"
+              subtitle="Каждое внешнее приложение должно быть отдельно одобрено, отклонено или отозвано."
+            >
+              {props.canReadOAuthApps ? (
+                <Stack spacing={1.25}>
+                  {props.oauthApps.map((application) => (
+                    <Paper key={application.id} variant="outlined" sx={{ p: 1.75, borderRadius: 4 }}>
+                      <Stack spacing={1}>
+                        <Stack
+                          direction={{ xs: "column", md: "row" }}
+                          justifyContent="space-between"
+                          spacing={1}
+                        >
+                          <Stack spacing={0.35}>
+                            <Typography variant="subtitle1">{application.name}</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {application.owner_name ?? "Неизвестный владелец"} · {application.client_id}
+                            </Typography>
+                          </Stack>
+                          <Chip
+                            label={application.status}
+                            color={
+                              application.status === "approved"
+                                ? "success"
+                                : application.status === "rejected"
+                                  ? "error"
+                                  : application.status === "revoked"
+                                    ? "warning"
+                                    : "default"
+                            }
+                            variant="outlined"
+                          />
+                        </Stack>
+                        <Typography variant="body2">
+                          {application.description || "Описание приложения не указано."}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Redirect URIs: {application.redirect_uris.join(" · ")}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Scope: {application.allowed_scopes.join(", ")}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Создано {formatDateTime(application.created_at)}
+                          {application.approved_at ? ` · Одобрено ${formatDateTime(application.approved_at)}` : ""}
+                        </Typography>
+                        {application.review_note && (
+                          <Alert severity={application.status === "approved" ? "success" : "info"}>
+                            {application.review_note}
+                          </Alert>
+                        )}
+                        <TextField
+                          label="Заметка администратора"
+                          multiline
+                          minRows={2}
+                          disabled={!props.canReviewOAuthApps}
+                          value={oauthReviewNotes[application.id] ?? application.review_note}
+                          onChange={(event) =>
+                            setOauthReviewNotes((current) => ({
+                              ...current,
+                              [application.id]: event.target.value,
+                            }))
+                          }
+                        />
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                          <Button
+                            variant="contained"
+                            disabled={!props.canReviewOAuthApps || props.submitting}
+                            onClick={() =>
+                              props.onReviewOAuthApp(
+                                application.id,
+                                "approved",
+                                oauthReviewNotes[application.id] ?? application.review_note,
+                              )
+                            }
+                          >
+                            Одобрить
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="warning"
+                            disabled={!props.canReviewOAuthApps || props.submitting}
+                            onClick={() =>
+                              props.onReviewOAuthApp(
+                                application.id,
+                                "rejected",
+                                oauthReviewNotes[application.id] ?? application.review_note,
+                              )
+                            }
+                          >
+                            Отклонить
+                          </Button>
+                          <Button
+                            variant="text"
+                            color="error"
+                            disabled={!props.canReviewOAuthApps || props.submitting}
+                            onClick={() =>
+                              props.onReviewOAuthApp(
+                                application.id,
+                                "revoked",
+                                oauthReviewNotes[application.id] ?? application.review_note,
+                              )
+                            }
+                          >
+                            Отозвать
+                          </Button>
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  ))}
+                  {props.oauthApps.length === 0 && (
+                    <EmptyState text="OAuth-приложения пока не зарегистрированы." />
+                  )}
+                </Stack>
+              ) : (
+                <EmptyState text="У вашей учётной записи нет права на просмотр OAuth-приложений." />
               )}
             </SectionCard>
           )}
