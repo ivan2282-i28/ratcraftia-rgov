@@ -145,6 +145,64 @@ def test_referendum_uses_signatures_quorum_and_four_day_window() -> None:
         assert outcome["law"]["level"] == "constitution"
 
 
+def test_root_overwrite_mode_can_directly_change_constitution() -> None:
+    db_path = Path("data/test-governance-overwrite.db")
+    if db_path.exists():
+        db_path.unlink()
+    os.environ["RGOV_DATABASE_URL"] = f"sqlite:///{db_path}"
+
+    from app.db import reset_engine_cache
+    from app.main import app
+
+    reset_engine_cache()
+
+    with TestClient(app) as client:
+        root_token = _login(client, "root", "RGOV-DEFAULT_ROOT")
+        auth_headers = _auth(root_token)
+
+        laws = client.get("/api/laws")
+        assert laws.status_code == 200, laws.text
+        constitution = next(item for item in laws.json() if item["level"] == "constitution")
+
+        denied = client.post(
+            f"/api/admin/laws/{constitution['id']}/overwrite",
+            headers=auth_headers,
+            json={
+                "title": constitution["title"],
+                "slug": constitution["slug"],
+                "level": constitution["level"],
+                "current_text": "Новая редакция без overwrite mode.",
+                "status": constitution["status"],
+                "adopted_via": "overwrite",
+                "reason": "should fail",
+            },
+        )
+        assert denied.status_code == 403, denied.text
+
+        updated = client.post(
+            f"/api/admin/laws/{constitution['id']}/overwrite",
+            headers={
+                **auth_headers,
+                "X-RGOV-Overwrite-Mode": "true",
+            },
+            json={
+                "title": "Конституция Ratcraftia",
+                "slug": constitution["slug"],
+                "level": "constitution",
+                "current_text": "Статья overwrite: root может напрямую перезаписать Конституцию в RGOV.",
+                "status": "active",
+                "adopted_via": "overwrite",
+                "reason": "root overwrite test",
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        payload = updated.json()
+        assert payload["level"] == "constitution"
+        assert payload["adopted_via"] == "overwrite"
+        assert payload["current_text"] == "Статья overwrite: root может напрямую перезаписать Конституцию в RGOV."
+        assert payload["version"] == 2
+
+
 def test_parliament_election_creates_deputies_and_bills_need_quorum() -> None:
     db_path = Path("data/test-governance-parliament.db")
     if db_path.exists():

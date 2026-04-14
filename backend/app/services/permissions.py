@@ -5,6 +5,7 @@ from typing import Any
 
 
 ROOT_LOGIN = "root"
+ROOT_PERMISSION = "root"
 WILDCARD_PERMISSION = "*"
 
 USERS_READ_PERMISSION = "admin.users.read"
@@ -63,10 +64,13 @@ PRESET_LABELS = {
     frozenset(PRESET_PERMISSIONS["executive_officer"]): "Исполнительный доступ",
     frozenset(PRESET_PERMISSIONS["parliament_member"]): "Парламентский доступ",
     frozenset(PRESET_PERMISSIONS["admin"]): "Административный доступ",
+    frozenset({ROOT_PERMISSION}): "Root / Overwrite",
     frozenset({WILDCARD_PERMISSION}): "Полный доступ",
+    frozenset({ROOT_PERMISSION, WILDCARD_PERMISSION}): "Root / Overwrite",
 }
 
 PERMISSION_LABELS = {
+    ROOT_PERMISSION: "Root / Overwrite",
     USERS_READ_PERMISSION: "Просмотр пользователей",
     USERS_CREATE_PERMISSION: "Создание пользователей",
     USERS_UPDATE_PERMISSION: "Редактирование пользователей",
@@ -90,13 +94,22 @@ def normalize_permissions(raw: Iterable[str] | str | None) -> list[str]:
         return []
     items = raw.split(",") if isinstance(raw, str) else raw
     normalized: set[str] = set()
+    has_wildcard = False
     for item in items:
         value = str(item).strip().lower()
         if not value:
             continue
         if value == WILDCARD_PERMISSION:
-            return [WILDCARD_PERMISSION]
+            has_wildcard = True
+            normalized.add(value)
+            continue
         normalized.add(value)
+    if not normalized:
+        return []
+    if has_wildcard:
+        if ROOT_PERMISSION in normalized:
+            return [ROOT_PERMISSION, WILDCARD_PERMISSION]
+        return [WILDCARD_PERMISSION]
     return sorted(normalized)
 
 
@@ -116,13 +129,22 @@ def permissions_label(raw: Iterable[str] | str | None) -> str:
 
 def permissions_from_legacy_role(role: str | None, *, login: str | None = None) -> list[str]:
     if (login or "").strip().lower() == ROOT_LOGIN:
-        return [WILDCARD_PERMISSION]
+        return [ROOT_PERMISSION, WILDCARD_PERMISSION]
     return PRESET_PERMISSIONS.get((role or "").strip().lower(), [])
 
 
 def has_permission(actor: Any, permission: str) -> bool:
     permissions = normalize_permissions(getattr(actor, "permissions", actor))
     return WILDCARD_PERMISSION in permissions or permission in permissions
+
+
+def has_root_permission(actor: Any) -> bool:
+    permissions = normalize_permissions(getattr(actor, "permissions", actor))
+    return ROOT_PERMISSION in permissions
+
+
+def can_use_overwrite_mode(actor: Any, enabled: bool = False) -> bool:
+    return enabled and has_root_permission(actor)
 
 
 def require_permission(

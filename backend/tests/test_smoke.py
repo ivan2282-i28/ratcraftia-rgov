@@ -67,7 +67,7 @@ def test_bootstrap_creates_only_root_account() -> None:
         payload = users.json()
         assert len(payload) == 1
         assert payload[0]["login"] == "root"
-        assert payload[0]["permissions"] == ["*"]
+        assert payload[0]["permissions"] == ["root", "*"]
 
 
 def test_change_password_and_rgov_login() -> None:

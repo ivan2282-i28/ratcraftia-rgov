@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlmodel import Session, select
 
 from ..core.security import get_current_user
@@ -11,6 +11,8 @@ from ..schemas import (
     DeveloperAppRead,
     DeveloperAppReviewRequest,
     HireRequest,
+    LawOverwriteRequest,
+    LawRead,
     OrganizationCreate,
     OrganizationRead,
     PermissionChangeRequest,
@@ -27,6 +29,7 @@ from ..services.permissions import (
     ORGS_READ_PERMISSION,
     USERS_CREATE_PERMISSION,
     USERS_READ_PERMISSION,
+    can_use_overwrite_mode,
     has_permission,
 )
 from ..services.portal import (
@@ -36,6 +39,7 @@ from ..services.portal import (
     fire_user,
     hire_user,
     list_admin_logs,
+    overwrite_law,
     serialize_org,
     serialize_user,
     update_user_identity,
@@ -60,12 +64,20 @@ def _ensure_admin_or_executive(actor: User) -> None:
         )
 
 
+def _read_overwrite_mode_header(
+    x_rgov_overwrite_mode: str | None = Header(default=None, alias="X-RGOV-Overwrite-Mode"),
+) -> bool:
+    return (x_rgov_overwrite_mode or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @router.get("/users", response_model=list[UserRead])
 def list_users(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> list[UserRead]:
-    _ensure_admin_or_executive(user)
+    if not can_use_overwrite_mode(user, overwrite_mode):
+        _ensure_admin_or_executive(user)
     users = session.exec(select(User).order_by(User.last_name, User.first_name)).all()
     return [serialize_user(session, user, show_uan=True) for user in users]
 
@@ -75,8 +87,9 @@ def add_user(
     payload: UserCreate,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> UserRead:
-    if not has_permission(user, USERS_CREATE_PERMISSION):
+    if not has_permission(user, USERS_CREATE_PERMISSION) and not can_use_overwrite_mode(user, overwrite_mode):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для создания пользователей.",
@@ -93,9 +106,16 @@ def update_user(
     payload: UserUpdate,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> UserRead:
     try:
-        return update_user_identity(session, user, _get_target_user(session, user_id), payload)
+        return update_user_identity(
+            session,
+            user,
+            _get_target_user(session, user_id),
+            payload,
+            overwrite_mode=overwrite_mode,
+        )
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
     except ValueError as error:
@@ -108,6 +128,7 @@ def update_permissions(
     payload: PermissionChangeRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> UserRead:
     try:
         return change_user_permissions(
@@ -115,6 +136,7 @@ def update_permissions(
             user,
             _get_target_user(session, user_id),
             payload.permissions,
+            overwrite_mode=overwrite_mode,
         )
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
@@ -126,9 +148,16 @@ def assign_user(
     payload: HireRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> UserRead:
     try:
-        return hire_user(session, user, _get_target_user(session, user_id), payload)
+        return hire_user(
+            session,
+            user,
+            _get_target_user(session, user_id),
+            payload,
+            overwrite_mode=overwrite_mode,
+        )
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
     except ValueError as error:
@@ -140,9 +169,15 @@ def dismiss_user(
     user_id: int,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> UserRead:
     try:
-        return fire_user(session, user, _get_target_user(session, user_id))
+        return fire_user(
+            session,
+            user,
+            _get_target_user(session, user_id),
+            overwrite_mode=overwrite_mode,
+        )
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
 
@@ -151,8 +186,9 @@ def dismiss_user(
 def list_orgs(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> list[OrganizationRead]:
-    if not has_permission(user, ORGS_READ_PERMISSION):
+    if not has_permission(user, ORGS_READ_PERMISSION) and not can_use_overwrite_mode(user, overwrite_mode):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для просмотра организаций.",
@@ -166,14 +202,37 @@ def add_org(
     payload: OrganizationCreate,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> OrganizationRead:
-    if not has_permission(user, ORGS_CREATE_PERMISSION):
+    if not has_permission(user, ORGS_CREATE_PERMISSION) and not can_use_overwrite_mode(user, overwrite_mode):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для создания организаций.",
         )
     try:
-        return create_org(session, user, payload)
+        return create_org(session, user, payload, overwrite_mode=overwrite_mode)
+    except PermissionError as error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.post("/laws/{law_id}/overwrite", response_model=LawRead)
+def overwrite_existing_law(
+    law_id: int,
+    payload: LawOverwriteRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
+) -> LawRead:
+    try:
+        return overwrite_law(
+            session,
+            user,
+            law_id,
+            payload,
+            overwrite_mode=overwrite_mode,
+        )
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
     except ValueError as error:
@@ -184,8 +243,9 @@ def add_org(
 def get_admin_logs(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> list[AdminLogRead]:
-    if not has_permission(user, ADMIN_LOGS_READ_PERMISSION):
+    if not has_permission(user, ADMIN_LOGS_READ_PERMISSION) and not can_use_overwrite_mode(user, overwrite_mode):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для просмотра журналов.",
@@ -197,8 +257,9 @@ def get_admin_logs(
 def get_oauth_apps(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> list[DeveloperAppRead]:
-    if not has_permission(user, OAUTH_APPS_READ_PERMISSION):
+    if not has_permission(user, OAUTH_APPS_READ_PERMISSION) and not can_use_overwrite_mode(user, overwrite_mode):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для просмотра OAuth-приложений.",
@@ -212,8 +273,9 @@ def review_registered_oauth_app(
     payload: DeveloperAppReviewRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> DeveloperAppRead:
-    if not has_permission(user, OAUTH_APPS_REVIEW_PERMISSION):
+    if not has_permission(user, OAUTH_APPS_REVIEW_PERMISSION) and not can_use_overwrite_mode(user, overwrite_mode):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для модерации OAuth-приложений.",

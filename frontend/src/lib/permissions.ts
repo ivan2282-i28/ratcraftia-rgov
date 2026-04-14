@@ -1,6 +1,7 @@
 import type { UserRead } from "../types";
 
 export const permissions = {
+  root: "root",
   usersRead: "admin.users.read",
   usersCreate: "admin.users.create",
   usersUpdate: "admin.users.update",

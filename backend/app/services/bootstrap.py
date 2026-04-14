@@ -409,7 +409,7 @@ def seed_demo_data(session: Session) -> None:
         last_name="RGOV",
         patronymic="",
         password="RGOV-DEFAULT_ROOT",
-        permissions=["*"],
+        permissions=["root", "*"],
         org_id=None,
         position_title="Системный аккаунт RGOV",
     )

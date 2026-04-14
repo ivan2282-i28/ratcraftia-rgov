@@ -37,6 +37,7 @@ from ..schemas import (
     DeputyRead,
     HireRequest,
     LawRead,
+    LawOverwriteRequest,
     MailCreate,
     MailRead,
     NewsCreate,
@@ -71,6 +72,7 @@ from .permissions import (
     USERS_UPDATE_PERMISSION,
     USER_PERMISSIONS_WRITE_PERMISSION,
     WILDCARD_PERMISSION,
+    can_use_overwrite_mode,
     normalize_permissions,
     permissions_label,
     require_permission,
@@ -395,7 +397,13 @@ def _has_wildcard(actor: User) -> bool:
     return WILDCARD_PERMISSION in normalize_permissions(actor.permissions)
 
 
-def _require_active_citizen(actor: User) -> None:
+def _overwrite_enabled(actor: User, overwrite_mode: bool = False) -> bool:
+    return can_use_overwrite_mode(actor, overwrite_mode)
+
+
+def _require_active_citizen(actor: User, *, overwrite_mode: bool = False) -> None:
+    if _overwrite_enabled(actor, overwrite_mode):
+        return
     if not actor.is_active:
         raise PermissionError("Требуется активная учётная запись гражданина Ratcraftia.")
 
@@ -418,9 +426,14 @@ def _refresh_expired_mandates(session: Session) -> None:
         session.commit()
 
 
-def _require_active_deputy(session: Session, actor: User) -> None:
-    _require_active_citizen(actor)
-    if _has_wildcard(actor):
+def _require_active_deputy(
+    session: Session,
+    actor: User,
+    *,
+    overwrite_mode: bool = False,
+) -> None:
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
+    if _overwrite_enabled(actor, overwrite_mode) or _has_wildcard(actor):
         return
     if not _is_active_deputy(session, actor.id):
         raise PermissionError("Парламентские действия доступны только действующим депутатам.")
@@ -943,8 +956,15 @@ def delete_news(session: Session, actor: User, news_id: int) -> None:
     session.commit()
 
 
-def create_org(session: Session, actor: User, payload: OrganizationCreate) -> OrganizationRead:
-    require_permission(actor, ORGS_CREATE_PERMISSION)
+def create_org(
+    session: Session,
+    actor: User,
+    payload: OrganizationCreate,
+    *,
+    overwrite_mode: bool = False,
+) -> OrganizationRead:
+    if not _overwrite_enabled(actor, overwrite_mode):
+        require_permission(actor, ORGS_CREATE_PERMISSION)
     if session.exec(select(Organization).where(Organization.slug == payload.slug)).first():
         raise ValueError("Организация с таким slug уже существует.")
     org = Organization(
@@ -1012,11 +1032,14 @@ def update_user_identity(
     actor: User,
     target: User,
     payload: UserUpdate,
+    *,
+    overwrite_mode: bool = False,
 ) -> UserRead:
-    require_permission(actor, USERS_UPDATE_PERMISSION)
+    if not _overwrite_enabled(actor, overwrite_mode):
+        require_permission(actor, USERS_UPDATE_PERMISSION)
     normalized_uin = payload.uin.strip()
     normalized_uan = payload.uan.strip()
-    if actor.id == target.id and normalized_uin != target.uin:
+    if not _overwrite_enabled(actor, overwrite_mode) and actor.id == target.id and normalized_uin != target.uin:
         raise PermissionError("Собственный УИН нельзя менять из активной сессии.")
     if session.exec(select(User).where(User.uin == normalized_uin, User.id != target.id)).first():
         raise ValueError("Пользователь с таким УИН уже существует.")
@@ -1223,12 +1246,15 @@ def change_user_permissions(
     actor: User,
     target: User,
     permissions: list[str],
+    *,
+    overwrite_mode: bool = False,
 ) -> UserRead:
-    require_permission(
-        actor,
-        USER_PERMISSIONS_WRITE_PERMISSION,
-        error_message="Только администратор может менять права доступа.",
-    )
+    if not _overwrite_enabled(actor, overwrite_mode):
+        require_permission(
+            actor,
+            USER_PERMISSIONS_WRITE_PERMISSION,
+            error_message="Только администратор может менять права доступа.",
+        )
     target.permissions = serialize_permissions(permissions)
     touch(target)
     session.add(target)
@@ -1252,8 +1278,16 @@ def change_user_permissions(
     return serialize_user(session, target, show_uan=True)
 
 
-def hire_user(session: Session, actor: User, target: User, payload: HireRequest) -> UserRead:
-    require_permission(actor, PERSONNEL_MANAGE_PERMISSION)
+def hire_user(
+    session: Session,
+    actor: User,
+    target: User,
+    payload: HireRequest,
+    *,
+    overwrite_mode: bool = False,
+) -> UserRead:
+    if not _overwrite_enabled(actor, overwrite_mode):
+        require_permission(actor, PERSONNEL_MANAGE_PERMISSION)
     org = session.exec(select(Organization).where(Organization.slug == payload.org_slug.lower())).first()
     if not org:
         raise ValueError("Организация не найдена.")
@@ -1282,8 +1316,15 @@ def hire_user(session: Session, actor: User, target: User, payload: HireRequest)
     return serialize_user(session, target)
 
 
-def fire_user(session: Session, actor: User, target: User) -> UserRead:
-    require_permission(actor, PERSONNEL_MANAGE_PERMISSION)
+def fire_user(
+    session: Session,
+    actor: User,
+    target: User,
+    *,
+    overwrite_mode: bool = False,
+) -> UserRead:
+    if not _overwrite_enabled(actor, overwrite_mode):
+        require_permission(actor, PERSONNEL_MANAGE_PERMISSION)
     org = get_org(session, target)
     target.org_id = None
     target.position_title = "Гражданин"
@@ -1340,6 +1381,63 @@ def change_password(
     touch(actor)
     session.add(actor)
     session.commit()
+
+
+def overwrite_law(
+    session: Session,
+    actor: User,
+    law_id: int,
+    payload: LawOverwriteRequest,
+    *,
+    overwrite_mode: bool = False,
+) -> LawRead:
+    if not _overwrite_enabled(actor, overwrite_mode):
+        raise PermissionError("Overwrite mode доступен только при permission root.")
+
+    law = session.get(Law, law_id)
+    if not law:
+        raise ValueError("Закон не найден.")
+
+    normalized_slug = payload.slug.strip().lower()
+    duplicate = session.exec(
+        select(Law).where(Law.slug == normalized_slug, Law.id != law.id)
+    ).first()
+    if duplicate:
+        raise ValueError("Закон с таким slug уже существует.")
+
+    changed = any(
+        [
+            law.title != payload.title.strip(),
+            law.slug != normalized_slug,
+            law.level != payload.level.strip().lower(),
+            law.current_text != payload.current_text.strip(),
+            law.status != payload.status.strip().lower(),
+            law.adopted_via != payload.adopted_via.strip(),
+        ]
+    )
+
+    law.title = payload.title.strip()
+    law.slug = normalized_slug
+    law.level = payload.level.strip().lower()
+    law.current_text = payload.current_text.strip()
+    law.status = payload.status.strip().lower()
+    law.adopted_via = payload.adopted_via.strip() or "overwrite"
+    law.author_id = actor.id
+    if changed:
+        law.version += 1
+    touch(law)
+    session.add(law)
+    _record_admin_log(
+        session,
+        actor,
+        action="law.overwrite",
+        summary=f"Перезаписан закон {law.title}",
+        target_label=law.title,
+        reason=payload.reason.strip(),
+    )
+    session.commit()
+    session.refresh(law)
+    return serialize_law(law)
 
 
 def _apply_law_change(
@@ -1402,16 +1500,18 @@ def nominate_parliament_candidate(
     actor: User,
     election_id: int,
     payload: ParliamentCandidateCreate,
+    *,
+    overwrite_mode: bool = False,
 ) -> ParliamentElectionRead:
-    _require_active_citizen(actor)
-    if _is_active_deputy(session, actor.id):
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
+    if not _overwrite_enabled(actor, overwrite_mode) and _is_active_deputy(session, actor.id):
         raise ValueError("Действующий депутат не может одновременно выдвигаться на свободное место.")
 
     election = session.get(ParliamentElection, election_id)
     if not election:
         raise ValueError("Парламентские выборы не найдены.")
     election = _finalize_parliament_election(session, election)
-    if election.status != "open":
+    if election.status != "open" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Приём кандидатов по этим выборам уже завершён.")
 
     existing = session.exec(
@@ -1447,13 +1547,15 @@ def sign_parliament_candidate(
     actor: User,
     election_id: int,
     candidate_id: int,
+    *,
+    overwrite_mode: bool = False,
 ) -> ParliamentElectionRead:
-    _require_active_citizen(actor)
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
     election = session.get(ParliamentElection, election_id)
     if not election:
         raise ValueError("Парламентские выборы не найдены.")
     election = _finalize_parliament_election(session, election)
-    if election.status != "open":
+    if election.status != "open" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Сбор подписей по этим выборам уже завершён.")
 
     candidate = session.get(ParliamentCandidate, candidate_id)
@@ -1481,20 +1583,22 @@ def vote_parliament_candidate(
     election_id: int,
     candidate_id: int,
     vote: str,
+    *,
+    overwrite_mode: bool = False,
 ) -> ParliamentElectionRead:
-    _require_active_citizen(actor)
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
     election = session.get(ParliamentElection, election_id)
     if not election:
         raise ValueError("Парламентские выборы не найдены.")
     election = _finalize_parliament_election(session, election)
-    if election.status != "open":
+    if election.status != "open" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Голосование по этим выборам уже завершено.")
 
     candidate = session.get(ParliamentCandidate, candidate_id)
     if not candidate or candidate.election_id != election_id:
         raise ValueError("Кандидат не найден.")
     candidate = _update_candidate_status(session, candidate)
-    if candidate.status != "registered":
+    if candidate.status != "registered" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Сначала кандидат должен собрать необходимое число подписей.")
 
     record = session.exec(
@@ -1512,7 +1616,11 @@ def vote_parliament_candidate(
     ).all()
 
     if vote == "yes":
-        if not record and len(current_votes) >= election.seat_count:
+        if (
+            not _overwrite_enabled(actor, overwrite_mode)
+            and not record
+            and len(current_votes) >= election.seat_count
+        ):
             raise ValueError(
                 f"Один избиратель может поддержать не более {election.seat_count} кандидатов."
             )
@@ -1533,9 +1641,15 @@ def vote_parliament_candidate(
     return serialize_parliament_election(session, election)
 
 
-def create_bill(session: Session, actor: User, payload: BillCreate) -> BillRead:
-    _require_active_deputy(session, actor)
-    if payload.target_level == "constitution":
+def create_bill(
+    session: Session,
+    actor: User,
+    payload: BillCreate,
+    *,
+    overwrite_mode: bool = False,
+) -> BillRead:
+    _require_active_deputy(session, actor, overwrite_mode=overwrite_mode)
+    if payload.target_level == "constitution" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Конституцию можно менять только через референдум.")
     bill = Bill(
         title=payload.title.strip(),
@@ -1560,13 +1674,20 @@ def create_bill(session: Session, actor: User, payload: BillCreate) -> BillRead:
     return serialize_bill(session, bill)
 
 
-def vote_bill(session: Session, actor: User, bill_id: int, vote: str) -> BillRead:
-    _require_active_deputy(session, actor)
+def vote_bill(
+    session: Session,
+    actor: User,
+    bill_id: int,
+    vote: str,
+    *,
+    overwrite_mode: bool = False,
+) -> BillRead:
+    _require_active_deputy(session, actor, overwrite_mode=overwrite_mode)
     bill = session.get(Bill, bill_id)
     if not bill:
         raise ValueError("Законопроект не найден.")
     bill = _refresh_bill_status(session, bill)
-    if bill.status == "enacted":
+    if bill.status == "enacted" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Законопроект уже принят.")
 
     record = session.exec(
@@ -1582,13 +1703,19 @@ def vote_bill(session: Session, actor: User, bill_id: int, vote: str) -> BillRea
     return serialize_bill(session, bill)
 
 
-def publish_bill(session: Session, actor: User, bill_id: int) -> LawRead:
-    _require_active_deputy(session, actor)
+def publish_bill(
+    session: Session,
+    actor: User,
+    bill_id: int,
+    *,
+    overwrite_mode: bool = False,
+) -> LawRead:
+    _require_active_deputy(session, actor, overwrite_mode=overwrite_mode)
     bill = session.get(Bill, bill_id)
     if not bill:
         raise ValueError("Законопроект не найден.")
     bill = _refresh_bill_status(session, bill)
-    if bill.status != "approved":
+    if bill.status != "approved" and not _overwrite_enabled(actor, overwrite_mode):
         if bill.status == "open":
             raise ValueError(
                 f"Для публикации нужен кворум не менее {PARLIAMENT_QUORUM} депутатов и большинство голосов 'за'."
@@ -1612,13 +1739,19 @@ def publish_bill(session: Session, actor: User, bill_id: int) -> LawRead:
     return serialize_law(law)
 
 
-def sign_referendum(session: Session, actor: User, referendum_id: int) -> ReferendumRead:
-    _require_active_citizen(actor)
+def sign_referendum(
+    session: Session,
+    actor: User,
+    referendum_id: int,
+    *,
+    overwrite_mode: bool = False,
+) -> ReferendumRead:
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
     referendum = session.get(Referendum, referendum_id)
     if not referendum:
         raise ValueError("Референдум не найден.")
     referendum = _refresh_referendum_status(session, referendum)
-    if referendum.status != "collecting_signatures":
+    if referendum.status != "collecting_signatures" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Сбор подписей по этому референдуму уже завершён.")
 
     record = session.exec(
@@ -1635,8 +1768,14 @@ def sign_referendum(session: Session, actor: User, referendum_id: int) -> Refere
     return serialize_referendum(session, referendum)
 
 
-def create_referendum(session: Session, actor: User, payload: ReferendumCreate) -> ReferendumRead:
-    _require_active_citizen(actor)
+def create_referendum(
+    session: Session,
+    actor: User,
+    payload: ReferendumCreate,
+    *,
+    overwrite_mode: bool = False,
+) -> ReferendumRead:
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
 
     matter_type = payload.matter_type.strip().lower()
     target_level = payload.target_level.strip().lower()
@@ -1692,17 +1831,24 @@ def create_referendum(session: Session, actor: User, payload: ReferendumCreate) 
     return serialize_referendum(session, referendum)
 
 
-def vote_referendum(session: Session, actor: User, referendum_id: int, vote: str) -> ReferendumRead:
-    _require_active_citizen(actor)
+def vote_referendum(
+    session: Session,
+    actor: User,
+    referendum_id: int,
+    vote: str,
+    *,
+    overwrite_mode: bool = False,
+) -> ReferendumRead:
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
     referendum = session.get(Referendum, referendum_id)
     if not referendum:
         raise ValueError("Референдум не найден.")
     referendum = _refresh_referendum_status(session, referendum)
-    if referendum.status == "enacted":
+    if referendum.status == "enacted" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Референдум уже исполнен.")
-    if referendum.status == "collecting_signatures":
+    if referendum.status == "collecting_signatures" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Сначала инициатива должна собрать необходимые подписи.")
-    if referendum.status != "open":
+    if referendum.status != "open" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Голосование по референдуму уже завершено.")
 
     record = session.exec(
@@ -1720,13 +1866,19 @@ def vote_referendum(session: Session, actor: User, referendum_id: int, vote: str
     return serialize_referendum(session, referendum)
 
 
-def publish_referendum(session: Session, actor: User, referendum_id: int) -> ReferendumOutcomeRead:
-    _require_active_citizen(actor)
+def publish_referendum(
+    session: Session,
+    actor: User,
+    referendum_id: int,
+    *,
+    overwrite_mode: bool = False,
+) -> ReferendumOutcomeRead:
+    _require_active_citizen(actor, overwrite_mode=overwrite_mode)
     referendum = session.get(Referendum, referendum_id)
     if not referendum:
         raise ValueError("Референдум не найден.")
     referendum = _refresh_referendum_status(session, referendum)
-    if referendum.status != "approved":
+    if referendum.status != "approved" and not _overwrite_enabled(actor, overwrite_mode):
         raise ValueError("Итог референдума ещё не одобрен и не может быть опубликован.")
 
     law: Law | None = None

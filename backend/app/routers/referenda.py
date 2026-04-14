@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlmodel import Session, select
 
 from ..core.security import get_current_user
@@ -19,6 +19,12 @@ from ..services.portal import (
 router = APIRouter(prefix="/api/referenda", tags=["referenda"])
 
 
+def _read_overwrite_mode_header(
+    x_rgov_overwrite_mode: str | None = Header(default=None, alias="X-RGOV-Overwrite-Mode"),
+) -> bool:
+    return (x_rgov_overwrite_mode or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @router.get("", response_model=list[ReferendumRead])
 def list_referenda(session: Session = Depends(get_session)) -> list[ReferendumRead]:
     referenda = session.exec(select(Referendum).order_by(Referendum.created_at.desc())).all()
@@ -30,9 +36,10 @@ def new_referendum(
     payload: ReferendumCreate,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> ReferendumRead:
     try:
-        return create_referendum(session, user, payload)
+        return create_referendum(session, user, payload, overwrite_mode=overwrite_mode)
     except PermissionError as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
     except ValueError as error:
@@ -45,9 +52,16 @@ def cast_referendum_vote(
     payload: VoteRequest,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> ReferendumRead:
     try:
-        return vote_referendum(session, user, referendum_id, payload.vote)
+        return vote_referendum(
+            session,
+            user,
+            referendum_id,
+            payload.vote,
+            overwrite_mode=overwrite_mode,
+        )
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
@@ -57,9 +71,10 @@ def add_referendum_signature(
     referendum_id: int,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> ReferendumRead:
     try:
-        return sign_referendum(session, user, referendum_id)
+        return sign_referendum(session, user, referendum_id, overwrite_mode=overwrite_mode)
     except (PermissionError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
 
@@ -69,8 +84,9 @@ def enact_referendum(
     referendum_id: int,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
+    overwrite_mode: bool = Depends(_read_overwrite_mode_header),
 ) -> ReferendumOutcomeRead:
     try:
-        return publish_referendum(session, user, referendum_id)
+        return publish_referendum(session, user, referendum_id, overwrite_mode=overwrite_mode)
     except (PermissionError, ValueError) as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error

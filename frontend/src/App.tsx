@@ -129,6 +129,24 @@ type OAuthRequestState = {
   state?: string;
 } | null;
 
+type AdminTreeNode =
+  | "laws"
+  | "constitution"
+  | "users"
+  | "organizations"
+  | "oauth_apps"
+  | "logs";
+
+type LawEditForm = {
+  title: string;
+  slug: string;
+  level: string;
+  status: string;
+  adoptedVia: string;
+  currentText: string;
+  reason: string;
+};
+
 type PortalData = {
   did: DidTokenResponse | null;
   inbox: MailRead[];
@@ -205,6 +223,7 @@ const permissionPresets = [
       permissions.usersUpdate,
     ].join(", "),
   },
+  { label: "Root / Overwrite", value: [permissions.root, "*"].join(", ") },
   { label: "Полный доступ", value: "*" },
 ];
 
@@ -286,7 +305,7 @@ function parsePermissionsInput(value: string) {
     .filter(Boolean);
 
   if (normalized.includes("*")) {
-    return ["*"];
+    return normalized.includes(permissions.root) ? [permissions.root, "*"] : ["*"];
   }
   return Array.from(new Set(normalized));
 }
@@ -349,6 +368,14 @@ function getErrorMessage(error: unknown) {
   return "Произошла непредвиденная ошибка.";
 }
 
+function readStoredOverwriteMode() {
+  try {
+    return window.localStorage.getItem("rgov-overwrite-mode") === "true";
+  } catch {
+    return false;
+  }
+}
+
 type AppProps = {
   colorMode: "light" | "dark";
   onToggleColorMode: () => void;
@@ -373,7 +400,8 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   const [submitting, setSubmitting] = React.useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = React.useState(false);
   const [mailboxTab, setMailboxTab] = React.useState<"inbox" | "sent">("inbox");
-  const [adminTab, setAdminTab] = React.useState(0);
+  const [adminTreeNode, setAdminTreeNode] = React.useState<AdminTreeNode>("laws");
+  const [overwriteMode, setOverwriteMode] = React.useState(() => readStoredOverwriteMode());
   const [lawSearch, setLawSearch] = React.useState("");
   const deferredLawSearch = React.useDeferredValue(lawSearch);
   const [snackbar, setSnackbar] = React.useState<SnackbarState>({
@@ -454,9 +482,20 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     orgSlug: "",
     positionTitle: "",
   });
+  const [selectedLawId, setSelectedLawId] = React.useState<number | "">("");
+  const [lawEditForm, setLawEditForm] = React.useState<LawEditForm>({
+    title: "",
+    slug: "",
+    level: "law",
+    status: "active",
+    adoptedVia: "overwrite",
+    currentText: "",
+    reason: "",
+  });
 
   const requestCounterRef = React.useRef(0);
   api.setToken(session.token);
+  api.setOverwriteMode(overwriteMode);
 
   React.useEffect(() => {
     const handleLocationChange = () => {
@@ -480,6 +519,10 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   }, [session]);
 
   React.useEffect(() => {
+    window.localStorage.setItem("rgov-overwrite-mode", overwriteMode ? "true" : "false");
+  }, [overwriteMode]);
+
+  React.useEffect(() => {
     const selectedUser = portalData.users.find((user) => user.id === selectedUserId);
     if (!selectedUser) {
       if (portalData.users.length > 0) {
@@ -498,6 +541,28 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
       positionTitle: selectedUser.position_title,
     });
   }, [portalData.users, selectedUserId]);
+
+  React.useEffect(() => {
+    const selectedLaw = portalData.laws.find((law) => law.id === selectedLawId);
+    if (!selectedLaw) {
+      const constitutionLaw = portalData.laws.find((law) => law.level === "constitution");
+      if (constitutionLaw) {
+        setSelectedLawId(constitutionLaw.id);
+      } else if (portalData.laws.length > 0) {
+        setSelectedLawId(portalData.laws[0].id);
+      }
+      return;
+    }
+    setLawEditForm({
+      title: selectedLaw.title,
+      slug: selectedLaw.slug,
+      level: selectedLaw.level,
+      status: selectedLaw.status,
+      adoptedVia: selectedLaw.adopted_via,
+      currentText: selectedLaw.current_text,
+      reason: "",
+    });
+  }, [portalData.laws, selectedLawId]);
 
   React.useEffect(() => {
     if (transferForm.recipient || portalData.directory.length === 0) {
@@ -703,6 +768,12 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     }
   }, [session.token]);
 
+  React.useEffect(() => {
+    if (session.token) {
+      void loadPortalData(true);
+    }
+  }, [overwriteMode, session.token]);
+
   async function runAction(
     task: () => Promise<void>,
     successMessage?: string,
@@ -726,11 +797,14 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
 
   const selectedUser =
     portalData.users.find((user) => user.id === selectedUserId) ?? null;
+  const selectedLaw =
+    portalData.laws.find((law) => law.id === selectedLawId) ?? null;
   const activeElection = currentElection(
     portalData.parliamentSummary,
     portalData.elections,
   );
 
+  const canUseOverwriteMode = hasPermission(session.profile, permissions.root);
   const canManageNews = hasPermission(session.profile, permissions.newsManage);
   const canManageBills = hasPermission(session.profile, permissions.billsManage);
   const canManageReferenda = hasPermission(
@@ -770,6 +844,7 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
   );
 
   const adminVisible =
+    canUseOverwriteMode ||
     canReadUsers ||
     canCreateUsers ||
     canUpdateUsers ||
@@ -779,6 +854,12 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
     canReadAdminLogs ||
     canReadOAuthApps ||
     canReviewOAuthApps;
+
+  React.useEffect(() => {
+    if (!canUseOverwriteMode && overwriteMode) {
+      setOverwriteMode(false);
+    }
+  }, [canUseOverwriteMode, overwriteMode]);
 
   const filteredLaws = portalData.laws.filter((law) =>
     [law.title, law.slug, law.level, law.adopted_via, law.current_text]
@@ -1280,8 +1361,9 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
             {section === "admin" && (
               <AdminSection
                 visible={adminVisible}
-                adminTab={adminTab}
-                setAdminTab={setAdminTab}
+                activeNode={adminTreeNode}
+                setActiveNode={setAdminTreeNode}
+                laws={portalData.laws}
                 users={portalData.users}
                 organizations={portalData.organizations}
                 adminLogs={portalData.adminLogs}
@@ -1293,9 +1375,17 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
                 selectedUser={selectedUser}
                 userEditForm={userEditForm}
                 setUserEditForm={setUserEditForm}
+                selectedLawId={selectedLawId}
+                setSelectedLawId={setSelectedLawId}
+                selectedLaw={selectedLaw}
+                lawEditForm={lawEditForm}
+                setLawEditForm={setLawEditForm}
                 organizationForm={organizationForm}
                 setOrganizationForm={setOrganizationForm}
                 permissionPresets={permissionPresets}
+                canUseOverwriteMode={canUseOverwriteMode}
+                overwriteMode={overwriteMode}
+                setOverwriteMode={setOverwriteMode}
                 canReadUsers={canReadUsers}
                 canCreateUsers={canCreateUsers}
                 canUpdateUsers={canUpdateUsers}
@@ -1394,6 +1484,22 @@ export function App({ colorMode, onToggleColorMode }: AppProps) {
                   void runAction(async () => {
                     await api.reviewAdminOAuthApp(appId, { status, reviewNote });
                   }, "Статус OAuth-приложения обновлён.")
+                }
+                onOverwriteLaw={() =>
+                  void runAction(async () => {
+                    if (!selectedLaw) {
+                      return;
+                    }
+                    await api.overwriteLaw(selectedLaw.id, {
+                      title: lawEditForm.title.trim(),
+                      slug: lawEditForm.slug.trim(),
+                      level: lawEditForm.level.trim(),
+                      status: lawEditForm.status.trim(),
+                      adoptedVia: lawEditForm.adoptedVia.trim(),
+                      currentText: lawEditForm.currentText,
+                      reason: lawEditForm.reason.trim(),
+                    });
+                  }, "Закон перезаписан в overwrite mode.")
                 }
               />
             )}

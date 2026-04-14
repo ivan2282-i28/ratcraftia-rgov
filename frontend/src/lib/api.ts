@@ -43,9 +43,14 @@ type RequestOptions = {
 
 export class ApiClient {
   private token: string | null = null;
+  private overwriteMode = false;
 
   setToken(token: string | null) {
     this.token = token;
+  }
+
+  setOverwriteMode(enabled: boolean) {
+    this.overwriteMode = enabled;
   }
 
   private async request<T>(
@@ -68,6 +73,9 @@ export class ApiClient {
         throw new ApiError("Сессия не активна.", 401);
       }
       headers.Authorization = `Bearer ${this.token}`;
+      if (this.overwriteMode) {
+        headers["X-RGOV-Overwrite-Mode"] = "true";
+      }
     }
 
     const response = await fetch(`${apiBaseUrl}${path}`, init);
@@ -410,6 +418,32 @@ export class ApiClient {
 
   getOrganizations() {
     return this.request<OrganizationRead[]>("/admin/organizations");
+  }
+
+  overwriteLaw(
+    lawId: number,
+    payload: {
+      title: string;
+      slug: string;
+      level: string;
+      currentText: string;
+      status: string;
+      adoptedVia: string;
+      reason: string;
+    },
+  ) {
+    return this.request<LawRead>(`/admin/laws/${lawId}/overwrite`, {
+      method: "POST",
+      body: {
+        title: payload.title,
+        slug: payload.slug,
+        level: payload.level,
+        current_text: payload.currentText,
+        status: payload.status,
+        adopted_via: payload.adoptedVia,
+        reason: payload.reason,
+      },
+    });
   }
 
   createOrganization(payload: {

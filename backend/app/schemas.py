@@ -137,6 +137,16 @@ class LawRead(BaseModel):
     updated_at: datetime
 
 
+class LawOverwriteRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    slug: str = Field(min_length=1, max_length=200)
+    level: str = Field(min_length=2, max_length=32)
+    current_text: str = Field(min_length=1)
+    status: str = Field(default="active", min_length=2, max_length=32)
+    adopted_via: str = Field(default="overwrite", min_length=2, max_length=64)
+    reason: str = Field(default="", max_length=240)
+
+
 class BillCreate(BaseModel):
     title: str = Field(min_length=3, max_length=150)
     summary: str = Field(default="")
